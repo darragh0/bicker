@@ -1,10 +1,23 @@
 import sys
-from collections.abc import Mapping, Sequence
 from dataclasses import MISSING, dataclass
 from getopt import GetoptError, gnu_getopt
-from typing import Final, Literal, NoReturn, Protocol, cast, get_args, get_origin, get_type_hints, overload
+from typing import (
+    TYPE_CHECKING,
+    Literal,
+    NoReturn,
+    Protocol,
+    cast,
+    final,
+    get_args,
+    get_origin,
+    get_type_hints,
+    overload,
+)
 
-__all__: Final = ["flag", "opt", "parse_args", "pos"]
+from bicker._style import style
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping, Sequence
 
 
 class _Converter(Protocol):
@@ -13,11 +26,12 @@ class _Converter(Protocol):
     def __call__(self, raw: str, /) -> object: ...
 
 
-@dataclass(frozen=True)
+@final
+@dataclass(frozen=True, kw_only=True)
 class _Field:
     default: object
     short: str | None = None
-    positional: bool = False
+    is_pos: bool = False
 
 
 # T only in the return type is intentional: it's inferred from the field's annotation
@@ -26,25 +40,27 @@ def pos[T]() -> T: ...  # pyright: ignore[reportInvalidTypeVarUse]
 @overload
 def pos[T](default: T) -> T: ...
 def pos(default: object = MISSING) -> object:
-    return _Field(default, positional=True)
+    return _Field(default=default, is_pos=True)
 
 
 def opt[T](default: T, short: str | None = None) -> T:
-    return cast("T", _Field(default, short))
+    return cast("T", _Field(default=default, short=short))
 
 
 def flag(short: str | None = None) -> bool:
-    return opt(False, short)
+    return opt(default=False, short=short)
 
 
 def parse_args[T](spec: type[T], argv: Sequence[str] | None = None) -> T:
     hints: dict[str, _Converter] = get_type_hints(spec)
 
     fields = _fields(spec, hints)
-    positional_fields = {name: field for name, field in fields.items() if field.positional}
-    option_fields = {name: field for name, field in fields.items() if not field.positional}
+    positional_fields = {name: field for name, field in fields.items() if field.is_pos}
+    option_fields = {name: field for name, field in fields.items() if not field.is_pos}
 
-    option_values, raw_positionals = _parse_options(option_fields, hints, sys.argv[1:] if argv is None else argv)
+    option_values, raw_positionals = _parse_options(
+        option_fields, hints, sys.argv[1:] if argv is None else argv
+    )
     positional_values = _parse_positionals(positional_fields, hints, raw_positionals)
 
     values = {name: field.default for name, field in fields.items()}
@@ -57,19 +73,21 @@ def parse_args[T](spec: type[T], argv: Sequence[str] | None = None) -> T:
     return args
 
 
-def _fields(spec: type, hints: Mapping[str, _Converter]) -> dict[str, _Field]:
+def _fields(spec: type[object], hints: Mapping[str, _Converter]) -> dict[str, _Field]:
     fields: dict[str, _Field] = {}
 
     for name in hints:
         field = getattr(spec, name, None)
         if not isinstance(field, _Field):
-            raise TypeError(f"{name!r} must be declared with pos(), opt() or flag()")
+            msg = f"{name!r} must be declared with pos(), opt() or flag()"
+            raise TypeError(msg)
         fields[name] = field
 
     # False (required) sorts before True (optional)
-    is_optional = [field.default is not MISSING for field in fields.values() if field.positional]
+    is_optional = [field.default is not MISSING for field in fields.values() if field.is_pos]
     if is_optional != sorted(is_optional):
-        raise TypeError("required positionals must precede optional ones")
+        msg = "required positionals must precede optional ones"
+        raise TypeError(msg)
 
     return fields
 
@@ -84,26 +102,63 @@ def _parse_options(
     names_by_key |= {field.short: name for name, field in option_fields.items() if field.short}
 
     # getopt's spec format: short "c:" / long "count=" mean the option takes a value
-    shorts = ""
-    longs: list[str] = []
-    for key, name in names_by_key.items():
-        takes_value = hints[name] is not bool
-        if key.startswith("--"):
-            longs.append(key[2:] + ("=" if takes_value else ""))
-        else:
-            shorts += key[1] + (":" if takes_value else "")
+    shorts = "".join(
+        k[1] + ("" if hints[n] is bool else ":")
+        for k, n in names_by_key.items()
+        if not k.startswith("--")
+    )
+    longs = [
+        k[2:] + ("" if hints[n] is bool else "=")
+        for k, n in names_by_key.items()
+        if k.startswith("--")
+    ]
 
     try:
         option_pairs, raw_positionals = gnu_getopt(argv, shorts, longs)
     except GetoptError as e:
-        _fail(str(e))
+        key = f"--{e.opt}" if f"--{e.opt}" in e.msg else f"-{e.opt}"
+        matches = [k for k in names_by_key if k.startswith(key)]
+
+        # getopt's own message for this leaks its spec format ("count=, color=")
+        if key not in names_by_key and len(matches) > 1:
+            listed = ", ".join(style(k, "opt") for k in matches)
+            _fail(f"option {style(key, 'opt')} is ambiguous: {listed}")
+
+        _fail(e.msg.replace(key, style(key, "opt")))
 
     option_values: dict[str, object] = {}
+    # raw in this context: str version of object (e.g., "3" = raw version of 3)
     for key, raw in option_pairs:
         name = names_by_key[key]
-        option_values[name] = True if hints[name] is bool else _convert(key, hints[name], raw)
+        option_values[name] = (
+            True if hints[name] is bool else _convert(key, hints[name], raw, style_key="opt")
+        )
 
     return option_values, raw_positionals
+
+
+def _convert(label: str, tp: _Converter, raw: str, *, style_key: str) -> object:
+    if get_origin(tp) is Literal:
+        literals: tuple[object, ...] = get_args(tp)
+        choices_by_raw = {str(choice): choice for choice in literals}
+
+        if raw not in choices_by_raw:
+            listed = ", ".join(
+                style(raw_choice, type(choice).__name__)
+                for raw_choice, choice in choices_by_raw.items()
+            )
+            msg = f"{style(label, style_key)} must be one of: {listed}"
+            _fail(msg)
+        return choices_by_raw[raw]
+
+    try:
+        return tp(raw)
+    except ValueError:
+        msg = (
+            f"{style(label, style_key)} expects {style(tp.__name__, 'type')}, "
+            f"got {style(raw, 'string')}"
+        )
+        _fail(msg)
 
 
 def _parse_positionals(
@@ -114,29 +169,20 @@ def _parse_positionals(
 
     required = [name for name, field in positional_fields.items() if field.default is MISSING]
 
-    too_few = len(raw_positionals) < len(required)
-    too_many = len(raw_positionals) > len(positional_fields)
-    if too_few or too_many:
-        usage = " ".join(name if name in required else f"[{name}]" for name in positional_fields)
-        _fail(f"expected positionals: {usage}")
+    if missing := required[len(raw_positionals) :]:
+        noun = "positional" if len(missing) == 1 else "positionals"
+        _fail(f"missing {noun}: {', '.join(style(name, 'pos') for name in missing)}")
 
-    return {name: _convert(name, hints[name], raw) for name, raw in zip(positional_fields, raw_positionals)}
+    if extra := raw_positionals[len(positional_fields) :]:
+        noun = "positional" if len(extra) == 1 else "positionals"
+        _fail(f"unexpected {noun}: {', '.join(style(raw, 'str') for raw in extra)}")
 
-
-def _convert(label: str, tp: _Converter, raw: str) -> object:
-    if get_origin(tp) is Literal:
-        literals: tuple[object, ...] = get_args(tp)
-        str_choices = {str(choice): choice for choice in literals}
-
-        if raw not in str_choices:
-            _fail(f"{label} must be one of: {', '.join(str_choices)}")
-        return str_choices[raw]
-
-    try:
-        return tp(raw)
-    except ValueError:
-        _fail(f"{label} expects {tp.__name__}, got {raw!r}")
+    return {
+        name: _convert(name, hints[name], raw, style_key="pos")
+        for name, raw in zip(positional_fields, raw_positionals, strict=False)
+    }
 
 
 def _fail(msg: str) -> NoReturn:
-    sys.exit(f"error: {msg}")
+    pre = style(None, "error_prefix")
+    sys.exit(f"{pre}{msg}")
