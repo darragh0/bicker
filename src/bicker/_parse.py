@@ -1,4 +1,6 @@
+import re
 import sys
+from collections import Counter
 from dataclasses import MISSING, dataclass
 from getopt import GetoptError, gnu_getopt
 from typing import (
@@ -103,7 +105,17 @@ def _fields(spec: type[object], hints: Mapping[str, object]) -> dict[str, _Field
             )
             raise TypeError(msg)
 
+        short = field.short
+        if short is not None and not re.fullmatch(r"-[A-Za-z0-9]", short):
+            msg = f"{name!r} has invalid short {short!r} (expected '-' plus one letter or digit)"
+            raise TypeError(msg)
+
         fields[name] = field
+
+    shorts = Counter(field.short for field in fields.values() if field.short)
+    if duplicates := [short for short, count in shorts.items() if count > 1]:
+        msg = f"short options used more than once: {', '.join(duplicates)}"
+        raise TypeError(msg)
 
     # False (required) sorts before True (optional)
     is_optional = [field.default is not MISSING for field in fields.values() if field.is_pos]
@@ -141,7 +153,9 @@ def _parse_options(
         key = f"--{e.opt}" if f"--{e.opt}" in e.msg else f"-{e.opt}"
         matches = [k for k in names_by_key if k.startswith(key)]
 
-        # getopt's own message for this leaks its spec format ("count=, color=")
+        # getopt's own messages for these leak its spec format ("count=, color=")
+        if not e.opt:  # e.g. "--=x"
+            _fail(f"option {style(key, Styles.OPT)} not recognized")
         if key not in names_by_key and len(matches) > 1:
             listed = ", ".join(style(k, Styles.OPT) for k in matches)
             _fail(f"option {style(key, Styles.OPT)} is ambiguous: {listed}")
