@@ -1,7 +1,7 @@
 import sys
 from dataclasses import MISSING
 from getopt import GetoptError, gnu_getopt
-from typing import TYPE_CHECKING, Literal, NoReturn, Protocol, get_args, get_origin, get_type_hints
+from typing import TYPE_CHECKING, Literal, NoReturn, get_args, get_origin, get_type_hints
 
 from bicker._spec import collect_fields
 from bicker._style import Style, Styles, style, style_value
@@ -9,26 +9,18 @@ from bicker._style import Style, Styles, style, style_value
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
-    from bicker._spec import Field
-
-
-class _Converter(Protocol):
-    __name__: str
-
-    def __call__(self, raw: str, /) -> object: ...
+    from bicker._spec import Converter, Field
 
 
 def parse_args[T](spec: type[T], argv: Sequence[str] | None = None) -> T:
-    hints: dict[str, _Converter] = get_type_hints(spec)
-
-    fields = collect_fields(spec, hints)
+    fields = collect_fields(spec, get_type_hints(spec))
     pos_fields = {name: field for name, field in fields.items() if field.is_pos}
     option_fields = {name: field for name, field in fields.items() if not field.is_pos}
 
     option_values, raw_positionals = _parse_options(
-        option_fields, hints, sys.argv[1:] if argv is None else argv
+        option_fields, sys.argv[1:] if argv is None else argv
     )
-    pos_values = _parse_positionals(pos_fields, hints, raw_positionals)
+    pos_values = _parse_positionals(pos_fields, raw_positionals)
 
     values = {name: field.default for name, field in fields.items()}
     values |= option_values
@@ -42,7 +34,6 @@ def parse_args[T](spec: type[T], argv: Sequence[str] | None = None) -> T:
 
 def _parse_options(
     option_fields: Mapping[str, Field],
-    hints: Mapping[str, _Converter],
     argv: Sequence[str],
 ) -> tuple[dict[str, object], list[str]]:
 
@@ -51,12 +42,12 @@ def _parse_options(
 
     # getopt's spec format: short "c:" / long "count=" mean the option takes a value
     shorts = "".join(
-        k[1] + ("" if hints[n] is bool else ":")
+        k[1] + ("" if option_fields[n].is_flag else ":")
         for k, n in names_by_key.items()
         if not k.startswith("--")
     )
     longs = [
-        k[2:] + ("" if hints[n] is bool else "=")
+        k[2:] + ("" if option_fields[n].is_flag else "=")
         for k, n in names_by_key.items()
         if k.startswith("--")
     ]
@@ -81,14 +72,15 @@ def _parse_options(
     # raw in this context: str version of object (e.g., "3" = raw version of 3)
     for key, raw in option_pairs:
         name = names_by_key[key]
+        field = option_fields[name]
         option_values[name] = (
-            True if hints[name] is bool else _convert(key, hints[name], raw, label_style=Styles.OPT)
+            True if field.is_flag else _convert(key, field.tp, raw, label_style=Styles.OPT)
         )
 
     return option_values, raw_positionals
 
 
-def _convert(label: str, tp: _Converter, raw: str, *, label_style: Style) -> object:
+def _convert(label: str, tp: Converter, raw: str, *, label_style: Style) -> object:
     if get_origin(tp) is Literal:
         literals: tuple[object, ...] = get_args(tp)
         choices_by_raw = {str(choice): choice for choice in literals}
@@ -113,7 +105,6 @@ def _convert(label: str, tp: _Converter, raw: str, *, label_style: Style) -> obj
 
 def _parse_positionals(
     pos_fields: Mapping[str, Field],
-    hints: Mapping[str, _Converter],
     raw_positionals: Sequence[str],
 ) -> dict[str, object]:
 
@@ -128,8 +119,8 @@ def _parse_positionals(
         _fail(f"unexpected {noun}: {', '.join(style(raw, Styles.STR) for raw in extra)}")
 
     return {
-        name: _convert(name, hints[name], raw, label_style=Styles.POS)
-        for name, raw in zip(pos_fields, raw_positionals, strict=False)
+        name: _convert(name, field.tp, raw, label_style=Styles.POS)
+        for (name, field), raw in zip(pos_fields.items(), raw_positionals, strict=False)
     }
 
 

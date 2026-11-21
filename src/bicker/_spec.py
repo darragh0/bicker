@@ -1,7 +1,17 @@
 import re
 from collections import Counter
 from dataclasses import MISSING, dataclass
-from typing import TYPE_CHECKING, Final, Literal, cast, final, get_args, get_origin, overload
+from typing import (
+    TYPE_CHECKING,
+    Final,
+    Literal,
+    Protocol,
+    cast,
+    final,
+    get_args,
+    get_origin,
+    overload,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -12,12 +22,29 @@ _SCALAR_TYPES: Final[tuple[type, ...]] = (str, int, float)
 _LITERAL_TYPES: Final[tuple[type, ...]] = (str, int)
 
 
-@final
+class Converter(Protocol):
+    __name__: str
+
+    def __call__(self, raw: str, /) -> object: ...
+
+
 @dataclass(frozen=True, kw_only=True)
-class Field:
+class _Declaration:
+    """What `pos()`, `opt()` and `flag()` return; the type isn't known until `collect_fields`."""
+
     default: object
     short: str | None = None
     is_pos: bool = False
+
+
+@final
+@dataclass(frozen=True, kw_only=True)
+class Field(_Declaration):
+    tp: Converter
+
+    @property
+    def is_flag(self) -> bool:
+        return self.tp is bool
 
 
 # T only in the return type is intentional: it's inferred from the field's annotation
@@ -26,27 +53,28 @@ def pos[T]() -> T: ...  # pyright: ignore[reportInvalidTypeVarUse]
 @overload
 def pos[T](default: T) -> T: ...
 def pos(default: object = MISSING) -> object:
-    return Field(default=default, is_pos=True)
+    return _Declaration(default=default, is_pos=True)
 
 
 def opt[T](default: T, short: str | None = None) -> T:
-    return cast("T", Field(default=default, short=short))
+    return cast("T", _Declaration(default=default, short=short))
 
 
 def flag(short: str | None = None) -> bool:
     return opt(default=False, short=short)
 
 
-def collect_fields(spec: type[object], hints: Mapping[str, object]) -> dict[str, Field]:
+def collect_fields(spec: type[object], hints: Mapping[str, Converter]) -> dict[str, Field]:
     fields: dict[str, Field] = {}
 
     for name, tp in hints.items():
-        field = getattr(spec, name, None)
-        if not isinstance(field, Field):
+        decl = getattr(spec, name, None)
+        if not isinstance(decl, _Declaration):
             msg = f"{name!r} must be declared with pos(), opt() or flag()"
             raise TypeError(msg)
 
-        _check_type(name, tp, field)
+        field = Field(default=decl.default, short=decl.short, is_pos=decl.is_pos, tp=tp)
+        _check_type(name, field)
         fields[name] = field
 
     _check_shorts(fields)
@@ -54,13 +82,15 @@ def collect_fields(spec: type[object], hints: Mapping[str, object]) -> dict[str,
     return fields
 
 
-def _check_type(name: str, tp: object, field: Field) -> None:
+def _check_type(name: str, field: Field) -> None:
+    tp: object = field.tp
     literal_args: tuple[object, ...] = get_args(tp) if get_origin(tp) is Literal else ()
     supported = (
         (isinstance(tp, type) and tp in _SCALAR_TYPES)
-        or (tp is bool and not field.is_pos)
+        or (field.is_flag and not field.is_pos)
         or (literal_args and all(type(arg) in _LITERAL_TYPES for arg in literal_args))
     )
+
     if not supported:
         scalars = ", ".join(t.__name__ for t in _SCALAR_TYPES)
         literals = "/".join(t.__name__ for t in _LITERAL_TYPES)
@@ -89,6 +119,7 @@ def _check_shorts(fields: Mapping[str, Field]) -> None:
 def _check_positional_order(fields: Mapping[str, Field]) -> None:
     # False (required) sorts before True (optional)
     is_optional = [field.default is not MISSING for field in fields.values() if field.is_pos]
+
     if is_optional != sorted(is_optional):
         msg = "required positionals must precede optional ones"
         raise TypeError(msg)
