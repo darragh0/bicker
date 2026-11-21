@@ -90,40 +90,52 @@ def _fields(spec: type[object], hints: Mapping[str, object]) -> dict[str, _Field
             msg = f"{name!r} must be declared with pos(), opt() or flag()"
             raise TypeError(msg)
 
-        literal_args: tuple[object, ...] = get_args(tp) if get_origin(tp) is Literal else ()
-        supported = (
-            (isinstance(tp, type) and tp in _SCALAR_TYPES)
-            or (tp is bool and not field.is_pos)
-            or (literal_args and all(type(arg) in _LITERAL_TYPES for arg in literal_args))
+        _check_type(name, tp, field)
+        fields[name] = field
+
+    _check_shorts(fields)
+    _check_positional_order(fields)
+    return fields
+
+
+def _check_type(name: str, tp: object, field: _Field) -> None:
+    literal_args: tuple[object, ...] = get_args(tp) if get_origin(tp) is Literal else ()
+    supported = (
+        (isinstance(tp, type) and tp in _SCALAR_TYPES)
+        or (tp is bool and not field.is_pos)
+        or (literal_args and all(type(arg) in _LITERAL_TYPES for arg in literal_args))
+    )
+    if not supported:
+        scalars = ", ".join(t.__name__ for t in _SCALAR_TYPES)
+        literals = "/".join(t.__name__ for t in _LITERAL_TYPES)
+        msg = (
+            f"{name!r} has unsupported type {tp!r} "
+            f"(supported: {scalars}, Literal of {literals}, and bool for flags)"
         )
-        if not supported:
-            scalars = ", ".join(t.__name__ for t in _SCALAR_TYPES)
-            literals = "/".join(t.__name__ for t in _LITERAL_TYPES)
+        raise TypeError(msg)
+
+
+def _check_shorts(fields: Mapping[str, _Field]) -> None:
+    for name, field in fields.items():
+        if field.short is not None and not re.fullmatch(r"-[A-Za-z0-9]", field.short):
             msg = (
-                f"{name!r} has unsupported type {tp!r} "
-                f"(supported: {scalars}, Literal of {literals}, and bool for flags)"
+                f"{name!r} has invalid short {field.short!r} "
+                "(expected '-' plus one letter or digit)"
             )
             raise TypeError(msg)
 
-        short = field.short
-        if short is not None and not re.fullmatch(r"-[A-Za-z0-9]", short):
-            msg = f"{name!r} has invalid short {short!r} (expected '-' plus one letter or digit)"
-            raise TypeError(msg)
-
-        fields[name] = field
-
-    shorts = Counter(field.short for field in fields.values() if field.short)
-    if duplicates := [short for short, count in shorts.items() if count > 1]:
+    counts = Counter(field.short for field in fields.values() if field.short)
+    if duplicates := [short for short, count in counts.items() if count > 1]:
         msg = f"short options used more than once: {', '.join(duplicates)}"
         raise TypeError(msg)
 
+
+def _check_positional_order(fields: Mapping[str, _Field]) -> None:
     # False (required) sorts before True (optional)
     is_optional = [field.default is not MISSING for field in fields.values() if field.is_pos]
     if is_optional != sorted(is_optional):
         msg = "required positionals must precede optional ones"
         raise TypeError(msg)
-
-    return fields
 
 
 def _parse_options(
