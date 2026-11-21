@@ -55,18 +55,7 @@ def _parse_options(
     try:
         option_pairs, raw_positionals = gnu_getopt(argv, shorts, longs)
     except GetoptError as e:
-        key = f"--{e.opt}" if f"--{e.opt}" in e.msg else f"-{e.opt}"
-        matches = [k for k in names_by_key if k.startswith(key)]
-
-        # getopt's own messages for these leak its spec format ("count=, color=")
-        if not e.opt:  # e.g. "--=x"
-            _fail(f"option {style(key, Styles.OPT)} not recognized")
-
-        if key not in names_by_key and len(matches) > 1:
-            listed = ", ".join(style(k, Styles.OPT) for k in matches)
-            _fail(f"option {style(key, Styles.OPT)} is ambiguous: {listed}")
-
-        _fail(e.msg.replace(key, style(key, Styles.OPT)))
+        _fail(_getopt_error_message(e, names_by_key))
 
     option_values: dict[str, object] = {}
     # raw in this context: str version of object (e.g., "3" = raw version of 3)
@@ -78,6 +67,21 @@ def _parse_options(
         )
 
     return option_values, raw_positionals
+
+
+def _getopt_error_message(e: GetoptError, names_by_key: Mapping[str, str]) -> str:
+    key = f"--{e.opt}" if f"--{e.opt}" in e.msg else f"-{e.opt}"
+    matches = [k for k in names_by_key if k.startswith(key)]
+
+    # getopt's own messages for these leak its spec format ("count=, color=")
+    if not e.opt:  # e.g. "--=x"
+        return f"option {style(key, Styles.OPT)} not recognized"
+
+    if key not in names_by_key and len(matches) > 1:
+        listed = ", ".join(style(k, Styles.OPT) for k in matches)
+        return f"option {style(key, Styles.OPT)} is ambiguous: {listed}"
+
+    return e.msg.replace(key, style(key, Styles.OPT))
 
 
 def _convert(label: str, tp: Converter, raw: str, *, label_style: Style) -> object:
