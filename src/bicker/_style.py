@@ -18,7 +18,16 @@ class Styles:
     TYPE: Final = Style("95")
     STR: Final = Style("32", '"{}"')
     INT: Final = Style("34")
+    HEADING: Final = Style("92;1", "{}:")
+    # Fragment styles
+    ARG_SEP: Final = Style("0")
     ERROR_PREFIX: Final = Style("91")
+
+
+@final
+class Fragments:
+    ARG_SEP: Final = ", "
+    ERROR_PREFIX: Final = "error: "
 
 
 def style(text: str, style_: Style, stream: TextIO | None = None) -> str:
@@ -27,4 +36,4 @@ def style(text: str, style_: Style, stream: TextIO | None = None) -> str:
     out = stream or sys.stderr
     use_color = out is not None and out.isatty() and not os.environ.get("NO_COLOR")
     formatted = style_.fmt.format(text)
-    return f"\x1b[{style_.code}m{formatted}\x1b[0m" if use_color else formatted
+    return f"\x1b[{style_.code}m{formatted}\x1b[0;0m" if use_color else formatted
