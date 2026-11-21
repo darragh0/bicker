@@ -3,6 +3,7 @@ from dataclasses import MISSING, dataclass
 from getopt import GetoptError, gnu_getopt
 from typing import (
     TYPE_CHECKING,
+    Final,
     Literal,
     NoReturn,
     Protocol,
@@ -18,6 +19,11 @@ from bicker._style import Style, Styles, style, style_value
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
+
+
+# Supported value types; bool is supported separately, for flags only
+_SCALAR_TYPES: Final[tuple[type, ...]] = (str, int, float)
+_LITERAL_TYPES: Final[tuple[type, ...]] = (str, int)
 
 
 class _Converter(Protocol):
@@ -73,13 +79,28 @@ def parse_args[T](spec: type[T], argv: Sequence[str] | None = None) -> T:
     return args
 
 
-def _fields(spec: type[object], hints: Mapping[str, _Converter]) -> dict[str, _Field]:
+def _fields(spec: type[object], hints: Mapping[str, object]) -> dict[str, _Field]:
     fields: dict[str, _Field] = {}
 
-    for name in hints:
+    for name, tp in hints.items():
         field = getattr(spec, name, None)
         if not isinstance(field, _Field):
             msg = f"{name!r} must be declared with pos(), opt() or flag()"
+            raise TypeError(msg)
+
+        literal_args: tuple[object, ...] = get_args(tp) if get_origin(tp) is Literal else ()
+        supported = (
+            (isinstance(tp, type) and tp in _SCALAR_TYPES)
+            or (tp is bool and not field.is_pos)
+            or (literal_args and all(type(arg) in _LITERAL_TYPES for arg in literal_args))
+        )
+        if not supported:
+            scalars = ", ".join(t.__name__ for t in _SCALAR_TYPES)
+            literals = "/".join(t.__name__ for t in _LITERAL_TYPES)
+            msg = (
+                f"{name!r} has unsupported type {tp!r} "
+                f"(supported: {scalars}, Literal of {literals}, and bool for flags)"
+            )
             raise TypeError(msg)
 
         fields[name] = field
