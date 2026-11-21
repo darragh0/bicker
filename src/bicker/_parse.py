@@ -6,17 +6,32 @@ from bicker._spec import LITERAL_TYPES, collect_fields
 from bicker._style import Fragments, Styles, style
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping, Sequence
+    from collections.abc import Collection, Mapping, Sequence
 
-    from bicker._spec import Field
+    from bicker._spec import Field, HelpKey
 
 
-def parse_args[T](spec: type[T], argv: Sequence[str] | None = None) -> T:
-    fields = collect_fields(spec)
+def print_help(spec: type[object]) -> None:
+    print(spec)
+
+
+def parse_args[T](
+    spec: type[T],
+    argv: Sequence[str] | None = None,
+    *,
+    help_keys: Collection[HelpKey] = ("-h", "--help"),
+) -> T:
+    fields = collect_fields(spec, help_keys)
 
     pos_fields = [field for field in fields if field.is_pos]
     option_fields = [field for field in fields if not field.is_pos]
     argv = sys.argv[1:] if argv is None else argv
+
+    # Help wins over any other error; after "--" everything is a positional
+    options_part = argv[: argv.index("--")] if "--" in argv else argv
+    if any(key in options_part for key in help_keys):
+        print_help(spec)
+        sys.exit(0)
 
     option_values, raw_positionals = _parse_options(option_fields, argv)
     pos_values = _parse_positionals(pos_fields, raw_positionals)

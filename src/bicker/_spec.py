@@ -17,10 +17,12 @@ from typing import (
 from bicker._style import Styles
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Collection, Sequence
 
     from bicker._style import Style
 
+
+type HelpKey = Literal["-h", "--help"]
 
 # Supported value types; bool is supported separately, for flags only
 _SCALAR_TYPES: Final[tuple[type, ...]] = (str, int, float)
@@ -88,7 +90,7 @@ def flag(short: str | None = None) -> bool:
     return opt(default=False, short=short)
 
 
-def collect_fields(spec: type[object]) -> list[Field]:
+def collect_fields(spec: type[object], help_keys: Collection[HelpKey]) -> list[Field]:
 
     fields: list[Field] = []
     hints: dict[str, Converter] = get_type_hints(spec)
@@ -104,6 +106,8 @@ def collect_fields(spec: type[object]) -> list[Field]:
         fields.append(field)
 
     _check_shorts(fields)
+    if help_keys:
+        _check_help_clash(fields, help_keys)
     _check_positional_order(fields)
 
     return fields
@@ -140,6 +144,19 @@ def _check_shorts(fields: Sequence[Field]) -> None:
     if duplicates := [short for short, count in counts.items() if count > 1]:
         msg = f"short options used more than once: {', '.join(duplicates)}"
         raise TypeError(msg)
+
+
+def _check_help_clash(fields: Sequence[Field], help_keys: Collection[HelpKey]) -> None:
+    for field in fields:
+        if field.is_pos:
+            continue
+        for key in (field.long_key, field.short):
+            if key in help_keys:
+                msg = (
+                    f"{field.name!r} uses {key!r}, which is reserved for help "
+                    "-- free it with parse_args(..., help_keys=...)"
+                )
+                raise TypeError(msg)
 
 
 def _check_positional_order(fields: Sequence[Field]) -> None:
