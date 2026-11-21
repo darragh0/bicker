@@ -14,7 +14,7 @@ from typing import (
     overload,
 )
 
-from bicker._style import style
+from bicker._style import Style, Styles, style, style_value
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
@@ -81,6 +81,7 @@ def _fields(spec: type[object], hints: Mapping[str, _Converter]) -> dict[str, _F
         if not isinstance(field, _Field):
             msg = f"{name!r} must be declared with pos(), opt() or flag()"
             raise TypeError(msg)
+
         fields[name] = field
 
     # False (required) sorts before True (optional)
@@ -121,33 +122,32 @@ def _parse_options(
 
         # getopt's own message for this leaks its spec format ("count=, color=")
         if key not in names_by_key and len(matches) > 1:
-            listed = ", ".join(style(k, "opt") for k in matches)
-            _fail(f"option {style(key, 'opt')} is ambiguous: {listed}")
+            listed = ", ".join(style(k, Styles.OPT) for k in matches)
+            _fail(f"option {style(key, Styles.OPT)} is ambiguous: {listed}")
 
-        _fail(e.msg.replace(key, style(key, "opt")))
+        _fail(e.msg.replace(key, style(key, Styles.OPT)))
 
     option_values: dict[str, object] = {}
     # raw in this context: str version of object (e.g., "3" = raw version of 3)
     for key, raw in option_pairs:
         name = names_by_key[key]
         option_values[name] = (
-            True if hints[name] is bool else _convert(key, hints[name], raw, style_key="opt")
+            True if hints[name] is bool else _convert(key, hints[name], raw, label_style=Styles.OPT)
         )
 
     return option_values, raw_positionals
 
 
-def _convert(label: str, tp: _Converter, raw: str, *, style_key: str) -> object:
+def _convert(label: str, tp: _Converter, raw: str, *, label_style: Style) -> object:
     if get_origin(tp) is Literal:
         literals: tuple[object, ...] = get_args(tp)
         choices_by_raw = {str(choice): choice for choice in literals}
 
         if raw not in choices_by_raw:
             listed = ", ".join(
-                style(raw_choice, type(choice).__name__)
-                for raw_choice, choice in choices_by_raw.items()
+                style_value(raw_choice, choice) for raw_choice, choice in choices_by_raw.items()
             )
-            msg = f"{style(label, style_key)} must be one of: {listed}"
+            msg = f"{style(label, label_style)} must be one of: {listed}"
             _fail(msg)
         return choices_by_raw[raw]
 
@@ -155,8 +155,8 @@ def _convert(label: str, tp: _Converter, raw: str, *, style_key: str) -> object:
         return tp(raw)
     except ValueError:
         msg = (
-            f"{style(label, style_key)} expects {style(tp.__name__, 'type')}, "
-            f"got {style(raw, 'string')}"
+            f"{style(label, label_style)} expects {style(tp.__name__, Styles.TYPE)}, "
+            f"got {style(raw, Styles.STR)}"
         )
         _fail(msg)
 
@@ -171,18 +171,17 @@ def _parse_positionals(
 
     if missing := required[len(raw_positionals) :]:
         noun = "positional" if len(missing) == 1 else "positionals"
-        _fail(f"missing {noun}: {', '.join(style(name, 'pos') for name in missing)}")
+        _fail(f"missing {noun}: {', '.join(style(name, Styles.POS) for name in missing)}")
 
     if extra := raw_positionals[len(positional_fields) :]:
         noun = "positional" if len(extra) == 1 else "positionals"
-        _fail(f"unexpected {noun}: {', '.join(style(raw, 'str') for raw in extra)}")
+        _fail(f"unexpected {noun}: {', '.join(style(raw, Styles.STR) for raw in extra)}")
 
     return {
-        name: _convert(name, hints[name], raw, style_key="pos")
+        name: _convert(name, hints[name], raw, label_style=Styles.POS)
         for name, raw in zip(positional_fields, raw_positionals, strict=False)
     }
 
 
 def _fail(msg: str) -> NoReturn:
-    pre = style(None, "error_prefix")
-    sys.exit(f"{pre}{msg}")
+    sys.exit(f"{style('error:', Styles.ERROR_PREFIX)} {msg}")

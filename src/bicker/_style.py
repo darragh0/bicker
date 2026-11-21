@@ -1,28 +1,38 @@
-from enum import Enum
-from os import environ
-from sys import stderr, stdout
-from typing import Final
-
-_STYLE_MAP: Final = {
-    "prog": ("1;96", "{}"),
-    "pos": ("96", "{}"),
-    "optional_pos": ("2;96", "[{}]"),
-    "opt": ("96", "{}"),
-    "type": ("95", "{}"),
-    "str": ("32", '"{}"'),
-    "int": ("34", "{}"),
-    "error_prefix": ("91", "error: "),
-}
+import os
+import sys
+from typing import Final, NamedTuple, TextIO, final
 
 
-class _OutStream(Enum):
-    STDOUT = stdout
-    STDERR = stderr
+@final
+class Style(NamedTuple):
+    code: str
+    fmt: str = "{}"
 
 
-def style(text: str | None, key: str, stream: _OutStream = _OutStream.STDERR) -> str:
-    use_color = stream.value.isatty() and not environ.get("NO_COLOR")
-    # Unknown keys (e.g. a type name like "bool") fall back to plain value styling
-    code, fmt = _STYLE_MAP.get(key, _STYLE_MAP["str"])
-    fmted = fmt if text is None else fmt.format(text)
-    return f"\x1b[{code}m{fmted}\x1b[0m" if use_color else fmted
+@final
+class Styles:
+    PROG: Final = Style("1;96")
+    POS: Final = Style("96")
+    OPTIONAL_POS: Final = Style("2;96", "[{}]")
+    OPT: Final = Style("96")
+    TYPE: Final = Style("95")
+    STR: Final = Style("32", '"{}"')
+    INT: Final = Style("34")
+    ERROR_PREFIX: Final = Style("91")
+
+
+_VALUE_STYLES: Final[dict[type, Style]] = {str: Styles.STR, int: Styles.INT}
+
+
+def style(text: str, style_: Style, stream: TextIO | None = None) -> str:
+    # Looked up per call so redirected streams (pytest, redirect_stderr) are respected;
+    # sys.stderr is None when there's no console (e.g. pythonw)
+    out = stream or sys.stderr
+    use_color = out is not None and out.isatty() and not os.environ.get("NO_COLOR")
+    formatted = style_.fmt.format(text)
+    return f"\x1b[{style_.code}m{formatted}\x1b[0m" if use_color else formatted
+
+
+def style_value(raw: str, value: object) -> str:
+    """Style `raw` by the type of `value` (a `Literal` choice: str or int)."""
+    return style(raw, _VALUE_STYLES[type(value)])
