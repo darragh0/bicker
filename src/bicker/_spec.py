@@ -13,13 +13,18 @@ from typing import (
     overload,
 )
 
+from bicker._style import Styles
+
 if TYPE_CHECKING:
     from collections.abc import Mapping
+
+    from bicker._style import Style
 
 
 # Supported value types; bool is supported separately, for flags only
 _SCALAR_TYPES: Final[tuple[type, ...]] = (str, int, float)
-_LITERAL_TYPES: Final[tuple[type, ...]] = (str, int)
+# Literal can't hold floats (PEP 586); each type maps to how its choices are styled
+LITERAL_TYPES: Final[dict[type, Style]] = {str: Styles.STR, int: Styles.INT}
 
 
 class Converter(Protocol):
@@ -88,12 +93,12 @@ def _check_type(name: str, field: Field) -> None:
     supported = (
         (isinstance(tp, type) and tp in _SCALAR_TYPES)
         or (field.is_flag and not field.is_pos)
-        or (literal_args and all(type(arg) in _LITERAL_TYPES for arg in literal_args))
+        or (literal_args and all(type(arg) in LITERAL_TYPES for arg in literal_args))
     )
 
     if not supported:
         scalars = ", ".join(t.__name__ for t in _SCALAR_TYPES)
-        literals = "/".join(t.__name__ for t in _LITERAL_TYPES)
+        literals = "/".join(t.__name__ for t in LITERAL_TYPES)
         msg = (
             f"{name!r} has unsupported type {tp!r} "
             f"(supported: {scalars}, Literal of {literals}, and bool for flags)"

@@ -3,8 +3,8 @@ from dataclasses import MISSING
 from getopt import GetoptError, gnu_getopt
 from typing import TYPE_CHECKING, Literal, NoReturn, get_args, get_origin, get_type_hints
 
-from bicker._spec import collect_fields
-from bicker._style import Style, Styles, style, style_value
+from bicker._spec import LITERAL_TYPES, collect_fields
+from bicker._style import Style, Styles, style
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
@@ -91,7 +91,8 @@ def _convert(label: str, tp: Converter, raw: str, *, label_style: Style) -> obje
 
         if raw not in choices_by_raw:
             listed = ", ".join(
-                style_value(raw_choice, choice) for raw_choice, choice in choices_by_raw.items()
+                style(raw_choice, LITERAL_TYPES[type(choice)])
+                for raw_choice, choice in choices_by_raw.items()
             )
             msg = f"{style(label, label_style)} must be one of: {listed}"
             _fail(msg)
