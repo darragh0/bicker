@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import sys
 from copy import copy
 from dataclasses import MISSING
@@ -46,7 +48,8 @@ def parse_args[T](
         epilog: Text shown at the end of help.
         examples: Example argument lists, each shown in help after the program name.
         usage_on_error: Whether to print the usage line after an error.
-        use_shorthand_usage: Whether the usage line shows `[options]` instead of every option.
+        use_shorthand_usage: Whether the usage line shows `[options]` instead of expanding each
+            option.
 
     Returns:
         An instance of `spec` with each declared attribute set to its parsed or default value.
