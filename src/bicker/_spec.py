@@ -61,6 +61,13 @@ class Field(_Declaration):
         return f"--{self.name.replace('_', '-')}"
 
     @property
+    def keys(self) -> tuple[str, ...]:
+        """The option's keys, short first, e.g. `("-c", "--count")`; none for a positional."""
+        if self.is_pos:
+            return ()
+        return (self.short, self.long_key) if self.short else (self.long_key,)
+
+    @property
     def style(self) -> Style:
         if self.is_flag:
             return Styles.FLAG
@@ -230,9 +237,7 @@ def _check_shorts(fields: Sequence[Field]) -> None:
 
 def _check_help_clash(fields: Sequence[Field], help_keys: Collection[HelpKey]) -> None:
     for field in fields:
-        if field.is_pos:
-            continue
-        for key in (field.long_key, field.short):
+        for key in field.keys:
             if key in help_keys:
                 msg = (
                     f"{field.name!r} uses {key!r}, which is reserved for help "

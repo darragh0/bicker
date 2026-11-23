@@ -88,8 +88,7 @@ def _parse_options(
     argv: Sequence[str],
 ) -> tuple[dict[str, object], list[str]]:
 
-    fields_by_key = {field.long_key: field for field in option_fields}
-    fields_by_key |= {field.short: field for field in option_fields if field.short}
+    fields_by_key = {key: field for field in option_fields for key in field.keys}
 
     # getopt's spec format: short "c:" / long "count=" mean the option takes a value
     shorts = "".join(
