@@ -177,26 +177,31 @@ def _key_style(key: str, fields_by_key: Mapping[str, Field]) -> Style:
 
 
 def _convert(label: str, field: Field, raw: str) -> object:
-    if field.choices:
-        choices_by_raw = {str(choice): choice for choice in field.choices}
-
-        if raw not in choices_by_raw:
-            listed = ", ".join(
-                style(raw_choice, LITERAL_TYPES[type(choice)])
-                for raw_choice, choice in choices_by_raw.items()
-            )
-            msg = f"{style(label, field.style)} must be one of: {listed}"
-            raise _ParseError(msg)
-        return choices_by_raw[raw]
+    # A field that takes values is either a scalar or a `Literal` (see `_check_type`)
+    typ = field.scalar_typ
+    if typ is None:
+        return _convert_choice(label, field, raw)
 
     try:
-        return field.value_typ(raw)
+        return typ(raw)
     except ValueError:
         msg = (
-            f"{style(label, field.style)} expects {style(field.value_typ.__name__, Styles.TYPE)}, "
+            f"{style(label, field.style)} expects {style(typ.__name__, Styles.TYPE)}, "
             f"got {style(raw, Styles.STR_VALUE)}"
         )
         raise _ParseError(msg) from None
+
+
+def _convert_choice(label: str, field: Field, raw: str) -> object:
+    choices_by_raw = {str(choice): choice for choice in field.choices}
+    if raw not in choices_by_raw:
+        listed = ", ".join(
+            style(raw_choice, LITERAL_TYPES[type(choice)])
+            for raw_choice, choice in choices_by_raw.items()
+        )
+        msg = f"{style(label, field.style)} must be one of: {listed}"
+        raise _ParseError(msg)
+    return choices_by_raw[raw]
 
 
 def _parse_positionals(

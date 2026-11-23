@@ -5,7 +5,6 @@ from typing import (
     TYPE_CHECKING,
     Final,
     Literal,
-    Protocol,
     cast,
     final,
     get_args,
@@ -17,7 +16,7 @@ from typing import (
 from bicker._style import Styles
 
 if TYPE_CHECKING:
-    from collections.abc import Collection, Sequence
+    from collections.abc import Collection, Mapping, Sequence
 
     from bicker._style import Style
 
@@ -31,16 +30,10 @@ _SHORT_KEY: Final = re.compile(r"-[A-Za-z0-9]")
 _LONG_KEY: Final = re.compile(r"--[A-Za-z0-9][A-Za-z0-9-]*")
 
 # Supported value types; bool is supported separately, for flags only
-_SCALAR_TYPES: Final[tuple[type, ...]] = (str, int, float)
+_SCALAR_TYPES: Final = (str, int, float)
 
 # Literal can't hold floats (PEP 586); each type maps to how its choices are styled
-LITERAL_TYPES: Final[dict[type, Style]] = {str: Styles.STR_VALUE, int: Styles.INT_VALUE}
-
-
-class Converter(Protocol):
-    __name__: str
-
-    def __call__(self, raw: str, /) -> object: ...
+LITERAL_TYPES: Final[Mapping[type, Style]] = {str: Styles.STR_VALUE, int: Styles.INT_VALUE}
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -60,7 +53,8 @@ class _Declaration:
 @dataclass(frozen=True, kw_only=True)
 class Field(_Declaration):
     name: str
-    typ: Converter
+    # The annotation as written, e.g. `int`, `list[str]` or `Literal["a", "b"]`
+    typ: object
 
     @property
     def long_key(self) -> str:
@@ -105,12 +99,18 @@ class Field(_Declaration):
         return get_origin(self.typ) is list
 
     @property
-    def value_typ(self) -> Converter:
+    def value_typ(self) -> object:
         """The type of each value: `T` for `list[T]`, otherwise the field's own type."""
         if not self.is_list:
             return self.typ
-        args: tuple[Converter, ...] = get_args(self.typ)
+        args: tuple[object, ...] = get_args(self.typ)
         return args[0]
+
+    @property
+    def scalar_typ(self) -> type[str | int | float] | None:
+        """The value type if it's `str`, `int` or `float`, else `None` (e.g. for a `Literal`)."""
+        typ = self.value_typ
+        return typ if isinstance(typ, type) and typ in _SCALAR_TYPES else None
 
     @property
     def choices(self) -> tuple[object, ...]:
@@ -221,7 +221,7 @@ def flag(
 def collect_fields(spec: type[object], help_keys: Collection[HelpKey]) -> list[Field]:
 
     fields: list[Field] = []
-    hints: dict[str, Converter] = get_type_hints(spec)
+    hints: dict[str, object] = get_type_hints(spec)
 
     for name, typ in hints.items():
         decl = getattr(spec, name, None)
@@ -253,9 +253,8 @@ def collect_fields(spec: type[object], help_keys: Collection[HelpKey]) -> list[F
 
 
 def _check_type(field: Field) -> None:
-    typ: object = field.value_typ
     supported = (
-        (isinstance(typ, type) and typ in _SCALAR_TYPES)
+        field.scalar_typ is not None
         or (field.is_flag and not field.is_pos)
         or (field.choices and all(type(choice) in LITERAL_TYPES for choice in field.choices))
     )
