@@ -17,14 +17,14 @@ if TYPE_CHECKING:
 
 def parse_args[T](
     spec: type[T],
-    argv: Sequence[str] | None = None,
+    argv: list[str] | tuple[str, ...] | None = None,
     *,
     help_keys: Collection[HelpKey] = ("-h", "--help"),
     help_description: str = "Show this message and exit",
     prog: str | None = None,
     description: str | None = None,
     epilog: str | None = None,
-    examples: Sequence[str] = (),
+    examples: list[str] | tuple[str, ...] = (),
     usage_on_error: bool = True,
     use_shorthand_usage: bool = False,
 ) -> T:
