@@ -29,6 +29,7 @@ classifiers = [
 Homepage = "https://github.com/darragh0/bicker"
 Repository = "https://github.com/darragh0/bicker"
 Issues = "https://github.com/darragh0/bicker/issues"
+Changelog = "https://github.com/darragh0/bicker/blob/main/CHANGELOG.md"
 
 [build-system]
 requires = ["uv_build>=0.13.9,<0.14.0"]
