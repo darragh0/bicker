@@ -1,134 +1,123 @@
-import sys
-from functools import partial
-from typing import TYPE_CHECKING, TextIO
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Final, TextIO, final
 
 from bicker._style import Style, Styles, style, visible_len
 
 if TYPE_CHECKING:
-    from collections.abc import Collection, Sequence
+    from collections.abc import Collection, Iterable, Sequence
 
     from bicker._spec import Field, HelpKey
 
-
-def print_help(
-    fields: Sequence[Field],
-    *,
-    prog: str,
-    help_keys: Collection[HelpKey],
-    help_description: str,
-    description: str | None,
-    epilog: str | None,
-    examples: Sequence[str],
-    use_shorthand_usage: bool,
-) -> None:
-    stream = sys.stdout
-    st = partial(style, stream=stream)
-    pad = "  "
-
-    # Required positionals always precede optional ones, so pass is ordered correctly
-    pos_entries = [
-        (
-            st(_pos_label(field), Styles.POS if field.is_required else Styles.OPTIONAL_POS),
-            field.description,
-        )
-        for field in fields
-        if field.is_pos
-    ]
-
-    opt_entries = [
-        (
-            _option_entry(field.short, field.long_key, field.style, field.metavar, stream),
-            field.description,
-        )
-        for field in fields
-        if not field.is_pos
-    ]
-
-    if help_keys:
-        short = "-h" if "-h" in help_keys else None
-        long = "--help" if "--help" in help_keys else None
-        help_entry = _option_entry(short, long, Styles.FLAG, None, stream)
-        opt_entries.append((help_entry, help_description))
-
-    # Descriptions start in one column across both sections
-    width = max((visible_len(entry) for entry, _ in pos_entries + opt_entries), default=0)
-    pos_lines = [pad + _described(entry, desc, width) for entry, desc in pos_entries]
-    opt_lines = [pad + _described(entry, desc, width) for entry, desc in opt_entries]
-
-    sections = [
-        format_usage(
-            fields,
-            prog=prog,
-            stream=stream,
-            use_shorthand=use_shorthand_usage,
-        )
-    ]
-    if description:
-        sections.append(description)
-    if pos_lines:
-        sections.append("\n".join([st("Positionals", Styles.HEADING), *pos_lines]))
-    if opt_lines:
-        sections.append("\n".join([st("Options", Styles.HEADING), *opt_lines]))
-    if examples:
-        example_lines = [pad + _styled_example(ex, prog, fields, stream) for ex in examples]
-        sections.append("\n".join([st("Examples", Styles.HEADING), *example_lines]))
-    if epilog:
-        sections.append(epilog)
-
-    print("\n\n".join(sections))
+_PAD: Final = "  "
 
 
-def format_usage(
-    fields: Sequence[Field],
-    *,
-    prog: str,
-    stream: TextIO,
-    use_shorthand: bool = False,
-) -> str:
-    """Build the usage line, styled for `stream` (stdout for help, stderr for errors)."""
-    st = partial(style, stream=stream)
-    option_fields = [field for field in fields if not field.is_pos]
+@final
+@dataclass(frozen=True, kw_only=True)
+class HelpConfig:
+    """The `parse_args` settings that shape help and usage output."""
 
-    # Required positionals always precede optional ones, so pass is ordered correctly
-    positionals = [
-        st(_pos_label(field), Styles.POS if field.is_required else Styles.USAGE_OPTIONAL_POS)
-        for field in fields
-        if field.is_pos
-    ]
+    prog: str
+    help_keys: Collection[HelpKey]
+    help_description: str
+    description: str | None
+    epilog: str | None
+    examples: Sequence[str]
+    use_shorthand_usage: bool
 
-    if use_shorthand:
-        options = [st("options", Styles.USAGE_OPT)] if option_fields else []
-    else:
-        # "..." after a list option: it can be repeated
-        options = [
-            st(_usage_option(field, stream), Styles.USAGE_OPT) + ("..." if field.is_list else "")
-            for field in option_fields
+
+@final
+class HelpRenderer:
+    """Build help and usage text, styled for `stream` (stdout for help, stderr for errors)."""
+
+    def __init__(self, fields: Sequence[Field], cfg: HelpConfig, stream: TextIO) -> None:
+        self._cfg = cfg
+        self._stream = stream
+        # Required positionals always precede optional ones, so these are in display order
+        self._positionals = [field for field in fields if field.is_pos]
+        self._options = [field for field in fields if not field.is_pos]
+
+    def help(self) -> str:
+        cfg = self._cfg
+        pos_entries = [
+            (self._pos_label(field, Styles.OPTIONAL_POS), field.description)
+            for field in self._positionals
         ]
+        opt_entries = [
+            (self._option_entry(field.keys, field.style, field.metavar), field.description)
+            for field in self._options
+        ]
+        if cfg.help_keys:
+            help_entry = self._option_entry(cfg.help_keys, Styles.FLAG, None)
+            opt_entries.append((help_entry, cfg.help_description))
 
-    return " ".join([st("Usage", Styles.HEADING), st(prog, Styles.PROG), *options, *positionals])
+        # Descriptions start in one column across both sections
+        width = max((visible_len(entry) for entry, _ in pos_entries + opt_entries), default=0)
 
+        sections = [self.usage()]
+        if cfg.description:
+            sections.append(cfg.description)
+        if pos_entries:
+            lines = [_described(entry, desc, width) for entry, desc in pos_entries]
+            sections.append(self._section("Positionals", lines))
+        if opt_entries:
+            lines = [_described(entry, desc, width) for entry, desc in opt_entries]
+            sections.append(self._section("Options", lines))
+        if cfg.examples:
+            sections.append(self._section("Examples", map(self._example, cfg.examples)))
+        if cfg.epilog:
+            sections.append(cfg.epilog)
+        return "\n\n".join(sections)
 
-def _usage_option(field: Field, stream: TextIO) -> str:
-    """`-v`, `-c COUNT` or `--color {red,blue}`: short key if set, plus a placeholder."""
-    st = partial(style, stream=stream)
-    key = st(field.short or field.long_key, field.style)
-    return f"{key} {st(field.metavar, Styles.METAVAR)}" if field.metavar else key
+    def usage(self) -> str:
+        if not self._options:
+            options = []
+        elif self._cfg.use_shorthand_usage:
+            options = [self._st("options", Styles.USAGE_OPT)]
+        else:
+            # "..." after a list option: it can be repeated
+            options = [
+                self._st(self._usage_option(field), Styles.USAGE_OPT)
+                + ("..." if field.is_list else "")
+                for field in self._options
+            ]
+        positionals = [
+            self._pos_label(field, Styles.USAGE_OPTIONAL_POS) for field in self._positionals
+        ]
+        heading = [self._st("Usage", Styles.HEADING), self._st(self._cfg.prog, Styles.PROG)]
+        return " ".join([*heading, *options, *positionals])
 
+    def _st(self, text: str, style_: Style) -> str:
+        return style(text, style_, self._stream)
 
-def _option_entry(
-    short: str | None,
-    long: str | None,
-    style_: Style,
-    metavar: str | None,
-    stream: TextIO,
-) -> str:
-    """`-c, --count COUNT`, `    --color {a,b}` or `-h`, with long keys in one column."""
-    st = partial(style, stream=stream)
-    # Shorts are always 2 chars ("-c"), so "-c, " or 4 spaces lines up every long key
-    short_col = (st(short, style_) + (", " if long else "")) if short else "    "
-    long_col = st(long, style_) if long else ""
-    value = f" {st(metavar, Styles.METAVAR)}" if metavar else ""
-    return short_col + long_col + value
+    def _section(self, title: str, lines: Iterable[str]) -> str:
+        return "\n".join([self._st(title, Styles.HEADING), *(_PAD + line for line in lines)])
+
+    def _pos_label(self, field: Field, optional_style: Style) -> str:
+        """Style the positional's name, plus `...` if it takes many values."""
+        label = field.name + ("..." if field.is_list else "")
+        return self._st(label, Styles.POS if field.is_required else optional_style)
+
+    def _usage_option(self, field: Field) -> str:
+        """`-v`, `-c COUNT` or `--color {red,blue}`: the first key, plus a placeholder."""
+        key = self._st(field.keys[0], field.style)
+        return f"{key} {self._st(field.metavar, Styles.METAVAR)}" if field.metavar else key
+
+    def _option_entry(self, keys: Collection[str], style_: Style, metavar: str | None) -> str:
+        """`-c, --count COUNT`, `    --color {a,b}` or `-h`, with long keys in one column."""
+        ordered = sorted(keys, key=len)  # Short first
+        # Shorts are always 2 chars ("-c"), so "-c, " or 4 spaces lines up every long key
+        indent = "    " if ordered[0].startswith("--") else ""
+        entry = indent + ", ".join(self._st(key, style_) for key in ordered)
+        return entry + (f" {self._st(metavar, Styles.METAVAR)}" if metavar else "")
+
+    def _example(self, example: str) -> str:
+        """Prefix `prog` and style known keys (e.g. `-w`) as in the options list."""
+        styles_by_key = {key: field.style for field in self._options for key in field.keys}
+        words = [
+            self._st(word, styles_by_key[word]) if word in styles_by_key else word
+            for word in example.split()
+        ]
+        return " ".join([self._st(self._cfg.prog, Styles.PROG), *words])
 
 
 def _described(entry: str, description: str | None, width: int) -> str:
@@ -136,19 +125,3 @@ def _described(entry: str, description: str | None, width: int) -> str:
     if not description:
         return entry
     return entry + " " * (width - visible_len(entry) + 2) + description
-
-
-def _styled_example(example: str, prog: str, fields: Sequence[Field], stream: TextIO) -> str:
-    """Prefix `prog` and style known keys (e.g. `-w`) as in the options list; leave the rest."""
-    st = partial(style, stream=stream)
-    styles_by_key = {field.long_key: field.style for field in fields if not field.is_pos}
-    styles_by_key |= {field.short: field.style for field in fields if field.short}
-    words = [
-        st(word, styles_by_key[word]) if word in styles_by_key else word for word in example.split()
-    ]
-    return " ".join([st(prog, Styles.PROG), *words])
-
-
-def _pos_label(field: Field) -> str:
-    """Return the positional's name, plus `...` if it takes all remaining values."""
-    return field.name + ("..." if field.is_list else "")

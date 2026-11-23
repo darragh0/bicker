@@ -5,7 +5,7 @@ from getopt import GetoptError, gnu_getopt
 from pathlib import Path
 from typing import TYPE_CHECKING, final
 
-from bicker._help import format_usage, print_help
+from bicker._help import HelpConfig, HelpRenderer
 from bicker._spec import LITERAL_TYPES, collect_fields
 from bicker._style import Style, Styles, style
 
@@ -29,7 +29,15 @@ def parse_args[T](
     use_shorthand_usage: bool = False,
 ) -> T:
     fields = collect_fields(spec, help_keys)
-    prog = prog or Path(sys.argv[0]).name
+    cfg = HelpConfig(
+        prog=prog or Path(sys.argv[0]).name,
+        help_keys=help_keys,
+        help_description=help_description,
+        description=description,
+        epilog=epilog,
+        examples=examples,
+        use_shorthand_usage=use_shorthand_usage,
+    )
 
     pos_fields = [field for field in fields if field.is_pos]
     option_fields = [field for field in fields if not field.is_pos]
@@ -38,16 +46,7 @@ def parse_args[T](
     # Help wins over any other error; after "--" everything is a positional
     options_part = argv[: argv.index("--")] if "--" in argv else argv
     if any(key in options_part for key in help_keys):
-        print_help(
-            fields,
-            prog=prog,
-            help_keys=help_keys,
-            help_description=help_description,
-            description=description,
-            epilog=epilog,
-            examples=examples,
-            use_shorthand_usage=use_shorthand_usage,
-        )
+        print(HelpRenderer(fields, cfg, sys.stdout).help())
         sys.exit(0)
 
     try:
@@ -56,16 +55,7 @@ def parse_args[T](
     except _ParseError as e:
         print(f"{style('error', Styles.ERROR_PREFIX)} {e}", file=sys.stderr)
         if usage_on_error:
-            print(
-                "\n"
-                + format_usage(
-                    fields,
-                    prog=prog,
-                    stream=sys.stderr,
-                    use_shorthand=use_shorthand_usage,
-                ),
-                file=sys.stderr,
-            )
+            print("\n" + HelpRenderer(fields, cfg, sys.stderr).usage(), file=sys.stderr)
         sys.exit(1)
 
     # Copied so a mutable default (e.g. a list) isn't shared between parses;
