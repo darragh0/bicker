@@ -18,6 +18,7 @@ def print_help(
     help_description: str,
     description: str | None,
     epilog: str | None,
+    examples: Sequence[str],
     use_shorthand_usage: bool,
 ) -> None:
     stream = sys.stdout
@@ -68,6 +69,9 @@ def print_help(
         sections.append("\n".join([st("Positionals", Styles.HEADING), *pos_lines]))
     if opt_lines:
         sections.append("\n".join([st("Options", Styles.HEADING), *opt_lines]))
+    if examples:
+        example_lines = [pad + _styled_example(ex, prog, fields, stream) for ex in examples]
+        sections.append("\n".join([st("Examples", Styles.HEADING), *example_lines]))
     if epilog:
         sections.append(epilog)
 
@@ -128,3 +132,14 @@ def _described(entry: str, description: str | None, width: int) -> str:
     if not description:
         return entry
     return entry + " " * (width - visible_len(entry) + 2) + description
+
+
+def _styled_example(example: str, prog: str, fields: Sequence[Field], stream: TextIO) -> str:
+    """Prefix `prog` and style known keys (e.g. `-w`) as in the options list; leave the rest."""
+    st = partial(style, stream=stream)
+    styles_by_key = {field.long_key: field.style for field in fields if not field.is_pos}
+    styles_by_key |= {field.short: field.style for field in fields if field.short}
+    words = [
+        st(word, styles_by_key[word]) if word in styles_by_key else word for word in example.split()
+    ]
+    return " ".join([st(prog, Styles.PROG), *words])

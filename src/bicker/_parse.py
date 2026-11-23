@@ -22,6 +22,7 @@ def parse_args[T](
     prog: str | None = None,
     description: str | None = None,
     epilog: str | None = None,
+    examples: Sequence[str] = (),
     usage_on_error: bool = True,
     use_shorthand_usage: bool = False,
 ) -> T:
@@ -42,6 +43,7 @@ def parse_args[T](
             help_description=help_description,
             description=description,
             epilog=epilog,
+            examples=examples,
             use_shorthand_usage=use_shorthand_usage,
         )
         sys.exit(0)
