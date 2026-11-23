@@ -23,6 +23,7 @@ if TYPE_CHECKING:
 
 
 type HelpKey = Literal["-h", "--help"]
+
 # How many values a list field takes: exactly `n`, or `(min, max)` with `None` for no max
 type Nargs = int | tuple[int, int | None]
 
@@ -31,6 +32,7 @@ _LONG_KEY: Final = re.compile(r"--[A-Za-z0-9][A-Za-z0-9-]*")
 
 # Supported value types; bool is supported separately, for flags only
 _SCALAR_TYPES: Final[tuple[type, ...]] = (str, int, float)
+
 # Literal can't hold floats (PEP 586); each type maps to how its choices are styled
 LITERAL_TYPES: Final[dict[type, Style]] = {str: Styles.STR_VALUE, int: Styles.INT_VALUE}
 
@@ -133,8 +135,27 @@ def pos[T](*, description: str | None = None, nargs: Nargs | None = None) -> T: 
 @overload
 def pos[T](default: T, *, description: str | None = None, nargs: Nargs | None = None) -> T: ...
 def pos(
-    default: object = MISSING, *, description: str | None = None, nargs: Nargs | None = None
+    default: object = MISSING,
+    *,
+    description: str | None = None,
+    nargs: Nargs | None = None,
 ) -> object:
+    """Declare a positional argument.
+
+    Positionals are matched in the order they're declared. Positionals with a `default` are
+    optional and must come after required ones. Annotate the field as `list[T]` to take several
+    values; unless `nargs` fixes the count, it must be the last positional.
+
+    Args:
+        default: The value used when the positional isn't given. Omit it to make the
+            positional required.
+        description: The help text for this positional.
+        nargs: How many values a `list[T]` positional takes: exactly `n`, or `(min, max)` with
+            `None` for no max. Defaults to at least 1, or at least 0 when `default` is given.
+
+    Returns:
+        A placeholder that `parse_args` replaces with the parsed value.
+    """
     return _Declaration(default=default, is_pos=True, description=description, nargs=nargs)
 
 
@@ -143,10 +164,29 @@ def opt[T](
     short: str | None = None,
     *,
     long: str | None = None,
-    metavar: str | None = None,
     description: str | None = None,
+    metavar: str | None = None,
     nargs: Nargs | None = None,
 ) -> T:
+    """Declare an option that takes a value.
+
+    Annotate the field as `list[T]` to make the option repeatable: each use adds one value.
+
+    Args:
+        default: The value used when the option isn't given. For a `list[T]` option, given
+            values replace the default rather than extend it.
+        short: A short key like `-c`: a dash plus one letter or digit.
+        long: A long key like `--count`. Defaults to the field name, e.g. `--dry-run` for
+            `dry_run`.
+        description: The help text for this option.
+        metavar: The value's placeholder in help. Defaults to `{a,b}` for a `Literal`, and
+            the field name in uppercase otherwise.
+        nargs: How many times a `list[T]` option can be given: exactly `n`, or `(min, max)`
+            with `None` for no max. Defaults to any number.
+
+    Returns:
+        A placeholder that `parse_args` replaces with the parsed value.
+    """
     decl = _Declaration(
         default=default,
         short=short,
@@ -159,8 +199,22 @@ def opt[T](
 
 
 def flag(
-    short: str | None = None, *, long: str | None = None, description: str | None = None
+    short: str | None = None,
+    *,
+    long: str | None = None,
+    description: str | None = None,
 ) -> bool:
+    """Declare a flag: a `bool` option without a value. Defaults to `False` unless flag is given.
+
+    Args:
+        short: A short key like `-v`: a dash plus one letter or digit.
+        long: A long key like `--verbose`. Defaults to the field name, e.g. `--dry-run` for
+            `dry_run`.
+        description: The help text for this flag.
+
+    Returns:
+        A placeholder that `parse_args` replaces with the parsed value.
+    """
     return opt(default=False, short=short, long=long, description=description)
 
 

@@ -28,6 +28,48 @@ def parse_args[T](
     usage_on_error: bool = True,
     use_shorthand_usage: bool = False,
 ) -> T:
+    """Parse command-line arguments into an instance of `spec`.
+
+    Each value is converted to its field's type: `str`, `int`, `float`, a `Literal` of strings
+    or ints (only its values are allowed), or a `list` of these. Parsing follows GNU
+    conventions: options and positionals can be mixed, and everything after `--` is a
+    positional. Output is colored in a terminal unless `NO_COLOR` is set.
+
+    Args:
+        spec: A class whose annotated attributes are declared with `pos()`, `opt()` or
+            `flag()`. It must be constructible with no arguments.
+        argv: The arguments to parse. Defaults to `sys.argv[1:]`.
+        help_keys: The keys that print help and exit. Pass `()` to disable help.
+        help_description: The help text for the help option itself.
+        prog: The program name shown in help. Defaults to the file name of `sys.argv[0]`.
+        description: Text shown below the usage line in help.
+        epilog: Text shown at the end of help.
+        examples: Example argument lists, each shown in help after the program name.
+        usage_on_error: Whether to print the usage line after an error.
+        use_shorthand_usage: Whether the usage line shows `[options]` instead of every option.
+
+    Returns:
+        An instance of `spec` with each declared attribute set to its parsed or default value.
+
+    Raises:
+        TypeError: If `spec` is declared incorrectly.
+        SystemExit: With code 0 after printing help to stdout, or code 1 after printing an
+            error (and usage) to stderr.
+
+    Example:
+        ```python
+        from bicker import flag, opt, parse_args, pos
+
+
+        class Args:
+            src: str = pos(description="File to read")
+            count: int = opt(1, "-c", description="How many times")
+            verbose: bool = flag("-v")
+
+
+        args = parse_args(Args)  # e.g. `prog in.txt -c 3 -v`
+        ```
+    """
     fields = collect_fields(spec, help_keys)
     cfg = HelpConfig(
         prog=prog or Path(sys.argv[0]).name,
