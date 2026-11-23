@@ -26,6 +26,9 @@ type HelpKey = Literal["-h", "--help"]
 # How many values a list field takes: exactly `n`, or `(min, max)` with `None` for no max
 type Nargs = int | tuple[int, int | None]
 
+_SHORT_KEY: Final = re.compile(r"-[A-Za-z0-9]")
+_LONG_KEY: Final = re.compile(r"--[A-Za-z0-9][A-Za-z0-9-]*")
+
 # Supported value types; bool is supported separately, for flags only
 _SCALAR_TYPES: Final[tuple[type, ...]] = (str, int, float)
 # Literal can't hold floats (PEP 586); each type maps to how its choices are styled
@@ -44,6 +47,7 @@ class _Declaration:
 
     default: object
     short: str | None = None
+    custom_long: str | None = None
     is_pos: bool = False
     custom_metavar: str | None = None
     description: str | None = None
@@ -58,7 +62,8 @@ class Field(_Declaration):
 
     @property
     def long_key(self) -> str:
-        return f"--{self.name.replace('_', '-')}"
+        """The custom long key if set, else derived from the name: `dry_run` -> `--dry-run`."""
+        return self.custom_long or f"--{self.name.replace('_', '-')}"
 
     @property
     def keys(self) -> tuple[str, ...]:
@@ -137,6 +142,7 @@ def opt[T](
     default: T,
     short: str | None = None,
     *,
+    long: str | None = None,
     metavar: str | None = None,
     description: str | None = None,
     nargs: Nargs | None = None,
@@ -144,6 +150,7 @@ def opt[T](
     decl = _Declaration(
         default=default,
         short=short,
+        custom_long=long,
         custom_metavar=metavar,
         description=description,
         nargs=nargs,
@@ -151,8 +158,10 @@ def opt[T](
     return cast("T", decl)
 
 
-def flag(short: str | None = None, *, description: str | None = None) -> bool:
-    return opt(default=False, short=short, description=description)
+def flag(
+    short: str | None = None, *, long: str | None = None, description: str | None = None
+) -> bool:
+    return opt(default=False, short=short, long=long, description=description)
 
 
 def collect_fields(spec: type[object], help_keys: Collection[HelpKey]) -> list[Field]:
@@ -171,6 +180,7 @@ def collect_fields(spec: type[object], help_keys: Collection[HelpKey]) -> list[F
             typ=typ,
             default=decl.default,
             short=decl.short,
+            custom_long=decl.custom_long,
             is_pos=decl.is_pos,
             custom_metavar=decl.custom_metavar,
             description=decl.description,
@@ -180,7 +190,7 @@ def collect_fields(spec: type[object], help_keys: Collection[HelpKey]) -> list[F
         _check_nargs(field)
         fields.append(field)
 
-    _check_shorts(fields)
+    _check_keys(fields)
     if help_keys:
         _check_help_clash(fields, help_keys)
     _check_positional_order(fields)
@@ -220,18 +230,24 @@ def _check_nargs(field: Field) -> None:
         raise TypeError(msg)
 
 
-def _check_shorts(fields: Sequence[Field]) -> None:
+def _check_keys(fields: Sequence[Field]) -> None:
     for field in fields:
-        if field.short is not None and not re.fullmatch(r"-[A-Za-z0-9]", field.short):
+        if field.short is not None and not _SHORT_KEY.fullmatch(field.short):
             msg = (
                 f"{field.name!r} has invalid short {field.short!r} "
                 "(expected '-' plus one letter or digit)"
             )
             raise TypeError(msg)
+        if field.custom_long is not None and not _LONG_KEY.fullmatch(field.custom_long):
+            msg = (
+                f"{field.name!r} has invalid long {field.custom_long!r} "
+                "(expected '--' plus letters, digits or '-')"
+            )
+            raise TypeError(msg)
 
-    counts = Counter(field.short for field in fields if field.short)
-    if duplicates := [short for short, count in counts.items() if count > 1]:
-        msg = f"short options used more than once: {', '.join(duplicates)}"
+    counts = Counter(key for field in fields for key in field.keys)
+    if duplicates := [key for key, count in counts.items() if count > 1]:
+        msg = f"option keys used more than once: {', '.join(duplicates)}"
         raise TypeError(msg)
 
 

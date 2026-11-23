@@ -19,9 +19,18 @@ class BadShort:
     x: int = opt(1, "x")
 
 
+class BadLong:
+    x: int = opt(1, long="x")
+
+
 class DuplicateShort:
     a: int = opt(1, "-a")
     b: int = opt(2, "-a")
+
+
+class DuplicateLong:
+    a: int = opt(1, long="--b")
+    b: int = opt(2)
 
 
 class HelpClash:
@@ -52,7 +61,9 @@ class InvalidNargs:
         (NotDeclared, "must be declared with pos(), opt() or flag()"),
         (Unsupported, "has unsupported type"),
         (BadShort, "has invalid short 'x'"),
-        (DuplicateShort, "short options used more than once: -a"),
+        (BadLong, "has invalid long 'x'"),
+        (DuplicateShort, "option keys used more than once: -a"),
+        (DuplicateLong, "option keys used more than once: --b"),
         (HelpClash, "reserved for help"),
         (OptionalBeforeRequired, "required positionals must precede optional ones"),
         (VariableListNotLast, "only the last positional can take a variable number"),

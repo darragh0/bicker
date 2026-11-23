@@ -55,6 +55,14 @@ def test_list_default_is_not_shared() -> None:
     assert parse("a").tags == []
 
 
+class Renamed:
+    count: int = opt(1, "-c", long="--num")
+
+
+def test_custom_long_key_replaces_the_default() -> None:
+    assert vars(parse_args(Renamed, ["--num", "3"])) == {"count": 3}
+
+
 class Points:
     point: list[int] = pos(nargs=2)
     name: str = pos()
@@ -76,6 +84,7 @@ def test_nargs_positionals_are_consumed_in_order() -> None:
         (Args, ["a", "--nope"], "option --nope not recognized"),
         (Args, ["a", "--verbose=1"], "option --verbose must not have an argument"),
         (Args, ["a", "--s"], "option --s is ambiguous: --scale, --strict"),
+        (Renamed, ["--count", "3"], "option --count not recognized"),
         (Points, ["1"], "point expects exactly 2 values, got 1"),
         (Points, ["1", "2", "bob", "a", "b", "c"], 'unexpected positional: "c"'),
     ],

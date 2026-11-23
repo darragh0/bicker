@@ -10,14 +10,14 @@ class Args:
     src: str = pos(description="Image to resize")
     dst: str = pos("out.png", description="Where to save the result")
 
-    # Options: a default, an optional short key, and optional metavar/description
+    # Options: a default, optional short/long keys (long defaults to --name), metavar, description
     width: int = opt(800, "-w", metavar="PX", description="Target width in pixels")
     scale: float = opt(1.0, description="Extra scale factor")
     fmt: Literal["png", "jpg", "webp"] = opt("png", "-f", description="Output format")
 
     # Flags: False unless given
     verbose: bool = flag("-v", description="Print what's happening")
-    dry_run: bool = flag(description="Don't write anything")
+    dry_run: bool = flag(long="--dry", description="Don't write anything")
 
 
 args = parse_args(
