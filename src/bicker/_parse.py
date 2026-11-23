@@ -1,4 +1,5 @@
 import sys
+from copy import copy
 from getopt import GetoptError, gnu_getopt
 from pathlib import Path
 from typing import TYPE_CHECKING, final
@@ -66,7 +67,8 @@ def parse_args[T](
             )
         sys.exit(1)
 
-    values = {field.name: field.default for field in fields}
+    # Copied so a mutable default (e.g. a list) isn't shared between parses
+    values = {field.name: copy(field.default) for field in fields}
     values |= option_values
     values |= pos_values
 
@@ -100,12 +102,17 @@ def _parse_options(
         raise _ParseError(_getopt_error_message(e, fields_by_key)) from None
 
     option_values: dict[str, object] = {}
+    repeated: dict[str, list[object]] = {}
     # raw in this context: str version of object (e.g., "3" = raw version of 3)
     for key, raw in option_pairs:
         field = fields_by_key[key]
-        option_values[field.name] = True if field.is_flag else _convert(key, field, raw)
+        value = True if field.is_flag else _convert(key, field, raw)
+        if field.is_list:
+            repeated.setdefault(field.name, []).append(value)
+        else:
+            option_values[field.name] = value
 
-    return option_values, raw_positionals
+    return option_values | repeated, raw_positionals
 
 
 def _getopt_error_message(e: GetoptError, fields_by_key: Mapping[str, Field]) -> str:
@@ -143,10 +150,10 @@ def _convert(label: str, field: Field, raw: str) -> object:
         return choices_by_raw[raw]
 
     try:
-        return field.tp(raw)
+        return field.value_tp(raw)
     except ValueError:
         msg = (
-            f"{style(label, field.style)} expects {style(field.tp.__name__, Styles.TYPE)}, "
+            f"{style(label, field.style)} expects {style(field.value_tp.__name__, Styles.TYPE)}, "
             f"got {style(raw, Styles.STR_VALUE)}"
         )
         raise _ParseError(msg) from None
@@ -158,21 +165,27 @@ def _parse_positionals(
 ) -> dict[str, object]:
 
     required = [field.name for field in pos_fields if field.is_required]
+    # A list positional (always last) takes all remaining values
+    rest_field = pos_fields[-1] if pos_fields and pos_fields[-1].is_list else None
+    single_fields = pos_fields[:-1] if rest_field else pos_fields
 
     if missing := required[len(raw_positionals) :]:
         noun = "positional" if len(missing) == 1 else "positionals"
         msg = f"missing {noun}: {', '.join(style(name, Styles.POS) for name in missing)}"
         raise _ParseError(msg)
 
-    if extra := raw_positionals[len(pos_fields) :]:
+    if not rest_field and (extra := raw_positionals[len(pos_fields) :]):
         noun = "positional" if len(extra) == 1 else "positionals"
         msg = f"unexpected {noun}: {', '.join(style(raw, Styles.STR_VALUE) for raw in extra)}"
         raise _ParseError(msg)
 
-    return {
+    values: dict[str, object] = {
         field.name: _convert(field.name, field, raw)
-        for field, raw in zip(pos_fields, raw_positionals, strict=False)
+        for field, raw in zip(single_fields, raw_positionals, strict=False)
     }
+    if rest_field and (rest := raw_positionals[len(single_fields) :]):
+        values[rest_field.name] = [_convert(rest_field.name, rest_field, raw) for raw in rest]
+    return values
 
 
 @final

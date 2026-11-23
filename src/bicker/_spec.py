@@ -72,9 +72,22 @@ class Field(_Declaration):
         return self.default is MISSING
 
     @property
+    def is_list(self) -> bool:
+        """Whether this takes many values: the rest of the positionals, or a repeated option."""
+        return get_origin(self.tp) is list
+
+    @property
+    def value_tp(self) -> Converter:
+        """The type of each value: `T` for `list[T]`, otherwise the field's own type."""
+        if not self.is_list:
+            return self.tp
+        args: tuple[Converter, ...] = get_args(self.tp)
+        return args[0]
+
+    @property
     def choices(self) -> tuple[object, ...]:
         """The values of a `Literal` type, or `()` for any other type."""
-        return get_args(self.tp) if get_origin(self.tp) is Literal else ()
+        return get_args(self.value_tp) if get_origin(self.value_tp) is Literal else ()
 
     @property
     def metavar(self) -> str | None:
@@ -146,7 +159,7 @@ def collect_fields(spec: type[object], help_keys: Collection[HelpKey]) -> list[F
 
 
 def _check_type(field: Field) -> None:
-    tp: object = field.tp
+    tp: object = field.value_tp
     supported = (
         (isinstance(tp, type) and tp in _SCALAR_TYPES)
         or (field.is_flag and not field.is_pos)
@@ -157,8 +170,9 @@ def _check_type(field: Field) -> None:
         scalars = ", ".join(t.__name__ for t in _SCALAR_TYPES)
         literals = "/".join(t.__name__ for t in LITERAL_TYPES)
         msg = (
-            f"{field.name!r} has unsupported type {tp!r} "
-            f"(supported: {scalars}, Literal of {literals}, and bool for flags)"
+            f"{field.name!r} has unsupported type {field.tp!r} "
+            f"(supported: {scalars}, Literal of {literals}, a list of those, "
+            "and bool for flags)"
         )
         raise TypeError(msg)
 
@@ -197,4 +211,10 @@ def _check_positional_order(fields: Sequence[Field]) -> None:
 
     if is_optional != sorted(is_optional):
         msg = "required positionals must precede optional ones"
+        raise TypeError(msg)
+
+    # A list positional takes all remaining values, so nothing can come after it
+    pos_fields = [field for field in fields if field.is_pos]
+    if any(field.is_list for field in pos_fields[:-1]):
+        msg = "only the last positional can be a list"
         raise TypeError(msg)

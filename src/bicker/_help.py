@@ -28,7 +28,7 @@ def print_help(
     # Required positionals always precede optional ones, so pass is ordered correctly
     pos_entries = [
         (
-            st(field.name, Styles.POS if field.is_required else Styles.OPTIONAL_POS),
+            st(_pos_label(field), Styles.POS if field.is_required else Styles.OPTIONAL_POS),
             field.description,
         )
         for field in fields
@@ -91,7 +91,7 @@ def format_usage(
 
     # Required positionals always precede optional ones, so pass is ordered correctly
     positionals = [
-        st(field.name, Styles.POS if field.is_required else Styles.USAGE_OPTIONAL_POS)
+        st(_pos_label(field), Styles.POS if field.is_required else Styles.USAGE_OPTIONAL_POS)
         for field in fields
         if field.is_pos
     ]
@@ -99,7 +99,11 @@ def format_usage(
     if use_shorthand:
         options = [st("options", Styles.USAGE_OPT)] if option_fields else []
     else:
-        options = [st(_usage_option(field, stream), Styles.USAGE_OPT) for field in option_fields]
+        # "..." after a list option: it can be repeated
+        options = [
+            st(_usage_option(field, stream), Styles.USAGE_OPT) + ("..." if field.is_list else "")
+            for field in option_fields
+        ]
 
     return " ".join([st("Usage", Styles.HEADING), st(prog, Styles.PROG), *options, *positionals])
 
@@ -143,3 +147,8 @@ def _styled_example(example: str, prog: str, fields: Sequence[Field], stream: Te
         st(word, styles_by_key[word]) if word in styles_by_key else word for word in example.split()
     ]
     return " ".join([st(prog, Styles.PROG), *words])
+
+
+def _pos_label(field: Field) -> str:
+    """Return the positional's name, plus `...` if it takes all remaining values."""
+    return field.name + ("..." if field.is_list else "")
