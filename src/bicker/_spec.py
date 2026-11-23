@@ -51,7 +51,7 @@ class _Declaration:
 @dataclass(frozen=True, kw_only=True)
 class Field(_Declaration):
     name: str
-    tp: Converter
+    typ: Converter
 
     @property
     def long_key(self) -> str:
@@ -65,7 +65,7 @@ class Field(_Declaration):
 
     @property
     def is_flag(self) -> bool:
-        return self.tp is bool
+        return self.typ is bool
 
     @property
     def is_required(self) -> bool:
@@ -74,20 +74,20 @@ class Field(_Declaration):
     @property
     def is_list(self) -> bool:
         """Whether this takes many values: the rest of the positionals, or a repeated option."""
-        return get_origin(self.tp) is list
+        return get_origin(self.typ) is list
 
     @property
-    def value_tp(self) -> Converter:
+    def value_typ(self) -> Converter:
         """The type of each value: `T` for `list[T]`, otherwise the field's own type."""
         if not self.is_list:
-            return self.tp
-        args: tuple[Converter, ...] = get_args(self.tp)
+            return self.typ
+        args: tuple[Converter, ...] = get_args(self.typ)
         return args[0]
 
     @property
     def choices(self) -> tuple[object, ...]:
         """The values of a `Literal` type, or `()` for any other type."""
-        return get_args(self.value_tp) if get_origin(self.value_tp) is Literal else ()
+        return get_args(self.value_typ) if get_origin(self.value_typ) is Literal else ()
 
     @property
     def metavar(self) -> str | None:
@@ -132,7 +132,7 @@ def collect_fields(spec: type[object], help_keys: Collection[HelpKey]) -> list[F
     fields: list[Field] = []
     hints: dict[str, Converter] = get_type_hints(spec)
 
-    for name, tp in hints.items():
+    for name, typ in hints.items():
         decl = getattr(spec, name, None)
         if not isinstance(decl, _Declaration):
             msg = f"{name!r} must be declared with pos(), opt() or flag()"
@@ -140,7 +140,7 @@ def collect_fields(spec: type[object], help_keys: Collection[HelpKey]) -> list[F
 
         field = Field(
             name=name,
-            tp=tp,
+            typ=typ,
             default=decl.default,
             short=decl.short,
             is_pos=decl.is_pos,
@@ -159,9 +159,9 @@ def collect_fields(spec: type[object], help_keys: Collection[HelpKey]) -> list[F
 
 
 def _check_type(field: Field) -> None:
-    tp: object = field.value_tp
+    typ: object = field.value_typ
     supported = (
-        (isinstance(tp, type) and tp in _SCALAR_TYPES)
+        (isinstance(typ, type) and typ in _SCALAR_TYPES)
         or (field.is_flag and not field.is_pos)
         or (field.choices and all(type(choice) in LITERAL_TYPES for choice in field.choices))
     )
@@ -170,7 +170,7 @@ def _check_type(field: Field) -> None:
         scalars = ", ".join(t.__name__ for t in _SCALAR_TYPES)
         literals = "/".join(t.__name__ for t in LITERAL_TYPES)
         msg = (
-            f"{field.name!r} has unsupported type {field.tp!r} "
+            f"{field.name!r} has unsupported type {field.typ!r} "
             f"(supported: {scalars}, Literal of {literals}, a list of those, "
             "and bool for flags)"
         )

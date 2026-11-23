@@ -150,10 +150,10 @@ def _convert(label: str, field: Field, raw: str) -> object:
         return choices_by_raw[raw]
 
     try:
-        return field.value_tp(raw)
+        return field.value_typ(raw)
     except ValueError:
         msg = (
-            f"{style(label, field.style)} expects {style(field.value_tp.__name__, Styles.TYPE)}, "
+            f"{style(label, field.style)} expects {style(field.value_typ.__name__, Styles.TYPE)}, "
             f"got {style(raw, Styles.STR_VALUE)}"
         )
         raise _ParseError(msg) from None
