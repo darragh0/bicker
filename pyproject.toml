@@ -1,6 +1,6 @@
 [project]
 name = "bicker"
-version = "0.1.0"
+version = "1.0.0"
 description = "Tiny, fully typed CLI argument parser: declare args as a class"
 readme = "README.md"
 authors = [
@@ -10,6 +10,25 @@ requires-python = ">=3.12"
 dependencies = []
 license = "MIT"
 license-files = ["LICENSE"]
+keywords = ["cli", "command-line", "arguments", "argument-parser", "argparse", "typed"]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Typing :: Typed",
+]
+
+[project.urls]
+Homepage = "https://github.com/darragh0/bicker"
+Repository = "https://github.com/darragh0/bicker"
+Issues = "https://github.com/darragh0/bicker/issues"
 
 [build-system]
 requires = ["uv_build>=0.12.5,<0.13.0"]
