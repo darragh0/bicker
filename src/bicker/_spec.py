@@ -23,6 +23,8 @@ if TYPE_CHECKING:
 
 
 type HelpKey = Literal["-h", "--help"]
+# How many values a list field takes: exactly `n`, or `(min, max)` with `None` for no max
+type Nargs = int | tuple[int, int | None]
 
 # Supported value types; bool is supported separately, for flags only
 _SCALAR_TYPES: Final[tuple[type, ...]] = (str, int, float)
@@ -45,6 +47,7 @@ class _Declaration:
     is_pos: bool = False
     custom_metavar: str | None = None
     description: str | None = None
+    nargs: Nargs | None = None
 
 
 @final
@@ -69,7 +72,18 @@ class Field(_Declaration):
 
     @property
     def is_required(self) -> bool:
+        if self.is_list:
+            return self.nargs_range[0] > 0
         return self.default is MISSING
+
+    @property
+    def nargs_range(self) -> tuple[int, int | None]:
+        """`(min, max)` values for a list; defaults to 1+ for `pos()`, 0+ otherwise."""
+        if isinstance(self.nargs, int):
+            return (self.nargs, self.nargs)
+        if self.nargs is not None:
+            return self.nargs
+        return (1 if self.is_pos and self.default is MISSING else 0, None)
 
     @property
     def is_list(self) -> bool:
@@ -103,11 +117,13 @@ class Field(_Declaration):
 
 # T only in the return type is intentional: it's inferred from the field's annotation
 @overload
-def pos[T](*, description: str | None = None) -> T: ...  # pyright: ignore[reportInvalidTypeVarUse]
+def pos[T](*, description: str | None = None, nargs: Nargs | None = None) -> T: ...  # pyright: ignore[reportInvalidTypeVarUse]
 @overload
-def pos[T](default: T, *, description: str | None = None) -> T: ...
-def pos(default: object = MISSING, *, description: str | None = None) -> object:
-    return _Declaration(default=default, is_pos=True, description=description)
+def pos[T](default: T, *, description: str | None = None, nargs: Nargs | None = None) -> T: ...
+def pos(
+    default: object = MISSING, *, description: str | None = None, nargs: Nargs | None = None
+) -> object:
+    return _Declaration(default=default, is_pos=True, description=description, nargs=nargs)
 
 
 def opt[T](
@@ -116,9 +132,14 @@ def opt[T](
     *,
     metavar: str | None = None,
     description: str | None = None,
+    nargs: Nargs | None = None,
 ) -> T:
     decl = _Declaration(
-        default=default, short=short, custom_metavar=metavar, description=description
+        default=default,
+        short=short,
+        custom_metavar=metavar,
+        description=description,
+        nargs=nargs,
     )
     return cast("T", decl)
 
@@ -146,8 +167,10 @@ def collect_fields(spec: type[object], help_keys: Collection[HelpKey]) -> list[F
             is_pos=decl.is_pos,
             custom_metavar=decl.custom_metavar,
             description=decl.description,
+            nargs=decl.nargs,
         )
         _check_type(field)
+        _check_nargs(field)
         fields.append(field)
 
     _check_shorts(fields)
@@ -174,6 +197,19 @@ def _check_type(field: Field) -> None:
             f"(supported: {scalars}, Literal of {literals}, a list of those, "
             "and bool for flags)"
         )
+        raise TypeError(msg)
+
+
+def _check_nargs(field: Field) -> None:
+    if field.nargs is None:
+        return
+    if not field.is_list:
+        msg = f"{field.name!r} has nargs but isn't a list"
+        raise TypeError(msg)
+
+    low, high = field.nargs_range
+    if low < 0 or (high is not None and high < max(low, 1)):
+        msg = f"{field.name!r} has invalid nargs {field.nargs!r}"
         raise TypeError(msg)
 
 
@@ -213,8 +249,9 @@ def _check_positional_order(fields: Sequence[Field]) -> None:
         msg = "required positionals must precede optional ones"
         raise TypeError(msg)
 
-    # A list positional takes all remaining values, so nothing can come after it
+    # A variable-count list takes the remaining values, so nothing can follow it;
+    # a fixed-count list (nargs=N) can go anywhere
     pos_fields = [field for field in fields if field.is_pos]
-    if any(field.is_list for field in pos_fields[:-1]):
-        msg = "only the last positional can be a list"
+    if any(field.is_list and len(set(field.nargs_range)) > 1 for field in pos_fields[:-1]):
+        msg = "only the last positional can take a variable number of values (use nargs=N)"
         raise TypeError(msg)

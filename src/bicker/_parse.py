@@ -1,5 +1,6 @@
 import sys
 from copy import copy
+from dataclasses import MISSING
 from getopt import GetoptError, gnu_getopt
 from pathlib import Path
 from typing import TYPE_CHECKING, final
@@ -67,8 +68,12 @@ def parse_args[T](
             )
         sys.exit(1)
 
-    # Copied so a mutable default (e.g. a list) isn't shared between parses
-    values = {field.name: copy(field.default) for field in fields}
+    # Copied so a mutable default (e.g. a list) isn't shared between parses;
+    # a list positional without a default (allowed when its min is 0) starts empty
+    values: dict[str, object] = {
+        field.name: [] if field.is_list and field.default is MISSING else copy(field.default)
+        for field in fields
+    }
     values |= option_values
     values |= pos_values
 
@@ -111,6 +116,10 @@ def _parse_options(
             repeated.setdefault(field.name, []).append(value)
         else:
             option_values[field.name] = value
+
+    for field in option_fields:
+        if field.is_list:
+            _check_count(field.long_key, field, len(repeated.get(field.name, [])))
 
     return option_values | repeated, raw_positionals
 
@@ -164,28 +173,55 @@ def _parse_positionals(
     raw_positionals: Sequence[str],
 ) -> dict[str, object]:
 
-    required = [field.name for field in pos_fields if field.is_required]
-    # A list positional (always last) takes all remaining values
-    rest_field = pos_fields[-1] if pos_fields and pos_fields[-1].is_list else None
-    single_fields = pos_fields[:-1] if rest_field else pos_fields
+    values: dict[str, object] = {}
+    rest = list(raw_positionals)
 
-    if missing := required[len(raw_positionals) :]:
-        noun = "positional" if len(missing) == 1 else "positionals"
-        msg = f"missing {noun}: {', '.join(style(name, Styles.POS) for name in missing)}"
+    # Each positional takes its values in order: 1 for a single value, N for nargs=N,
+    # and (only possible for the last one) up to its max for a variable-count list
+    for i, field in enumerate(pos_fields):
+        if not rest:
+            if missing := [f.name for f in pos_fields[i:] if f.is_required]:
+                noun = "positional" if len(missing) == 1 else "positionals"
+                msg = f"missing {noun}: {', '.join(style(name, Styles.POS) for name in missing)}"
+                raise _ParseError(msg)
+            break
+
+        if not field.is_list:
+            values[field.name] = _convert(field.name, field, rest.pop(0))
+            continue
+
+        _, high = field.nargs_range
+        taken, rest = (rest, []) if high is None else (rest[:high], rest[high:])
+        _check_count(field.name, field, len(taken))
+        values[field.name] = [_convert(field.name, field, raw) for raw in taken]
+
+    if rest:
+        noun = "positional" if len(rest) == 1 else "positionals"
+        msg = f"unexpected {noun}: {', '.join(style(raw, Styles.STR_VALUE) for raw in rest)}"
         raise _ParseError(msg)
 
-    if not rest_field and (extra := raw_positionals[len(pos_fields) :]):
-        noun = "positional" if len(extra) == 1 else "positionals"
-        msg = f"unexpected {noun}: {', '.join(style(raw, Styles.STR_VALUE) for raw in extra)}"
-        raise _ParseError(msg)
-
-    values: dict[str, object] = {
-        field.name: _convert(field.name, field, raw)
-        for field, raw in zip(single_fields, raw_positionals, strict=False)
-    }
-    if rest_field and (rest := raw_positionals[len(single_fields) :]):
-        values[rest_field.name] = [_convert(rest_field.name, rest_field, raw) for raw in rest]
     return values
+
+
+def _check_count(label: str, field: Field, count: int) -> None:
+    lo, hi = field.nargs_range
+    if count < lo or (hi is not None and count > hi):
+        msg = f"{style(label, field.style)} expects {_expected_count(lo, hi)}, got {count}"
+        raise _ParseError(msg)
+
+
+def _expected_count(low: int, high: int | None) -> str:
+    """`exactly 2 values`, `at least 1 value`, `at most 3 values` or `1 to 3 values`."""
+    if low == high:
+        text = f"exactly {low}"
+    elif high is None:
+        text = f"at least {low}"
+    elif low == 0:
+        text = f"at most {high}"
+    else:
+        text = f"{low} to {high}"
+    shown = low if high is None else high
+    return f"{text} value{'' if shown == 1 else 's'}"
 
 
 @final
