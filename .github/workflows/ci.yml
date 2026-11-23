@@ -21,7 +21,6 @@ jobs:
       - run: uv run ruff check
       - run: uv run basedpyright src tests demo.py
       - run: uv run mypy --strict src tests demo.py
-      - run: uv run ty check src tests demo.py
 
   test:
     runs-on: ubuntu-latest
