@@ -42,6 +42,12 @@ def test_help_lists_everything_aligned(capsys: pytest.CaptureFixture[str]) -> No
     )
 
 
+def test_help_shorthand_usage_and_epilog(capsys: pytest.CaptureFixture[str]) -> None:
+    out = help_text(capsys, "-h", use_shorthand_usage=True, epilog="See the docs.")
+    assert out.startswith("Usage: tool [options] src [files...]\n")
+    assert out.endswith("\n\nSee the docs.\n")
+
+
 def test_help_wins_over_other_errors(capsys: pytest.CaptureFixture[str]) -> None:
     assert help_text(capsys, "--nope", "-h").startswith("Usage: tool")
 

@@ -74,6 +74,12 @@ def test_nargs_positionals_are_consumed_in_order() -> None:
     assert (args.point, args.name, args.files) == ([1, 2], "bob", ["a"])
 
 
+class Counts:
+    tags: list[str] = opt([], "-t", nargs=(1, 3))
+    ids: list[int] = opt([], nargs=(0, 1))
+    names: list[str] = opt([], nargs=(2, None))
+
+
 @pytest.mark.parametrize(
     ("spec", "argv", "message"),
     [
@@ -84,9 +90,13 @@ def test_nargs_positionals_are_consumed_in_order() -> None:
         (Args, ["a", "--nope"], "option --nope not recognized"),
         (Args, ["a", "--verbose=1"], "option --verbose must not have an argument"),
         (Args, ["a", "--s"], "option --s is ambiguous: --scale, --strict"),
+        (Args, ["a", "--=x"], "option -- not recognized"),
         (Renamed, ["--count", "3"], "option --count not recognized"),
         (Points, ["1"], "point expects exactly 2 values, got 1"),
         (Points, ["1", "2", "bob", "a", "b", "c"], 'unexpected positional: "c"'),
+        (Counts, [], "--tags expects 1 to 3 values, got 0"),
+        (Counts, ["-t", "a", "--ids", "1", "--ids", "2"], "--ids expects at most 1 value, got 2"),
+        (Counts, ["-t", "a", "--names", "x"], "--names expects at least 2 values, got 1"),
     ],
 )
 def test_user_errors(
