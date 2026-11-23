@@ -131,7 +131,7 @@ class Field(_Declaration):
 
 # T only in the return type is intentional: it's inferred from the field's annotation
 @overload
-def pos[T](*, description: str | None = None, nargs: Nargs | None = None) -> T: ...  # pyright: ignore[reportInvalidTypeVarUse]
+def pos[T](*, description: str | None = None, nargs: Nargs | None = None) -> T: ...  # type: ignore[type-var]  # pyright: ignore[reportInvalidTypeVarUse]
 @overload
 def pos[T](default: T, *, description: str | None = None, nargs: Nargs | None = None) -> T: ...
 def pos(
