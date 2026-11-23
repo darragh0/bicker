@@ -1,9 +1,11 @@
 import sys
 from getopt import GetoptError, gnu_getopt
-from typing import TYPE_CHECKING, NoReturn
+from pathlib import Path
+from typing import TYPE_CHECKING, final
 
+from bicker._help import format_usage, print_help
 from bicker._spec import LITERAL_TYPES, collect_fields
-from bicker._style import Fragments, Styles, style
+from bicker._style import Style, Styles, style
 
 if TYPE_CHECKING:
     from collections.abc import Collection, Mapping, Sequence
@@ -11,17 +13,20 @@ if TYPE_CHECKING:
     from bicker._spec import Field, HelpKey
 
 
-def print_help(spec: type[object]) -> None:
-    print(spec)
-
-
 def parse_args[T](
     spec: type[T],
     argv: Sequence[str] | None = None,
     *,
     help_keys: Collection[HelpKey] = ("-h", "--help"),
+    help_description: str = "Show this message and exit",
+    prog: str | None = None,
+    description: str | None = None,
+    epilog: str | None = None,
+    usage_on_error: bool = True,
+    use_shorthand_usage: bool = False,
 ) -> T:
     fields = collect_fields(spec, help_keys)
+    prog = prog or Path(sys.argv[0]).name
 
     pos_fields = [field for field in fields if field.is_pos]
     option_fields = [field for field in fields if not field.is_pos]
@@ -30,11 +35,34 @@ def parse_args[T](
     # Help wins over any other error; after "--" everything is a positional
     options_part = argv[: argv.index("--")] if "--" in argv else argv
     if any(key in options_part for key in help_keys):
-        print_help(spec)
+        print_help(
+            fields,
+            prog=prog,
+            help_keys=help_keys,
+            help_description=help_description,
+            description=description,
+            epilog=epilog,
+            use_shorthand_usage=use_shorthand_usage,
+        )
         sys.exit(0)
 
-    option_values, raw_positionals = _parse_options(option_fields, argv)
-    pos_values = _parse_positionals(pos_fields, raw_positionals)
+    try:
+        option_values, raw_positionals = _parse_options(option_fields, argv)
+        pos_values = _parse_positionals(pos_fields, raw_positionals)
+    except _ParseError as e:
+        print(f"{style('error', Styles.ERROR_PREFIX)} {e}", file=sys.stderr)
+        if usage_on_error:
+            print(
+                "\n"
+                + format_usage(
+                    fields,
+                    prog=prog,
+                    stream=sys.stderr,
+                    use_shorthand=use_shorthand_usage,
+                ),
+                file=sys.stderr,
+            )
+        sys.exit(1)
 
     values = {field.name: field.default for field in fields}
     values |= option_values
@@ -67,7 +95,7 @@ def _parse_options(
     try:
         option_pairs, raw_positionals = gnu_getopt(argv, shorts, longs)
     except GetoptError as e:
-        _fail(_getopt_error_message(e, fields_by_key))
+        raise _ParseError(_getopt_error_message(e, fields_by_key)) from None
 
     option_values: dict[str, object] = {}
     # raw in this context: str version of object (e.g., "3" = raw version of 3)
@@ -84,13 +112,19 @@ def _getopt_error_message(e: GetoptError, fields_by_key: Mapping[str, Field]) ->
 
     # getopt's own messages for these leak its spec format ("count=, color=")
     if not e.opt:  # e.g. "--=x"
-        return f"option {style(key, Styles.OPT)} not recognized"
+        return f"option {style(key, _key_style(key, fields_by_key))} not recognized"
 
     if key not in fields_by_key and len(matches) > 1:
-        listed = ", ".join(style(k, Styles.OPT) for k in matches)
-        return f"option {style(key, Styles.OPT)} is ambiguous: {listed}"
+        listed = ", ".join(style(k, _key_style(k, fields_by_key)) for k in matches)
+        return f"option {style(key, _key_style(key, fields_by_key))} is ambiguous: {listed}"
 
-    return e.msg.replace(key, style(key, Styles.OPT))
+    return e.msg.replace(key, style(key, _key_style(key, fields_by_key)))
+
+
+def _key_style(key: str, fields_by_key: Mapping[str, Field]) -> Style:
+    """Return the key's field style (flag vs option), or the option style for unknown keys."""
+    field = fields_by_key.get(key)
+    return field.style if field else Styles.OPT
 
 
 def _convert(label: str, field: Field, raw: str) -> object:
@@ -102,18 +136,18 @@ def _convert(label: str, field: Field, raw: str) -> object:
                 style(raw_choice, LITERAL_TYPES[type(choice)])
                 for raw_choice, choice in choices_by_raw.items()
             )
-            msg = f"{style(label, field.label_style)} must be one of: {listed}"
-            _fail(msg)
+            msg = f"{style(label, field.style)} must be one of: {listed}"
+            raise _ParseError(msg)
         return choices_by_raw[raw]
 
     try:
         return field.tp(raw)
     except ValueError:
         msg = (
-            f"{style(label, field.label_style)} expects {style(field.tp.__name__, Styles.TYPE)}, "
-            f"got {style(raw, Styles.STR)}"
+            f"{style(label, field.style)} expects {style(field.tp.__name__, Styles.TYPE)}, "
+            f"got {style(raw, Styles.STR_VALUE)}"
         )
-        _fail(msg)
+        raise _ParseError(msg) from None
 
 
 def _parse_positionals(
@@ -125,11 +159,13 @@ def _parse_positionals(
 
     if missing := required[len(raw_positionals) :]:
         noun = "positional" if len(missing) == 1 else "positionals"
-        _fail(f"missing {noun}: {', '.join(style(name, Styles.POS) for name in missing)}")
+        msg = f"missing {noun}: {', '.join(style(name, Styles.POS) for name in missing)}"
+        raise _ParseError(msg)
 
     if extra := raw_positionals[len(pos_fields) :]:
         noun = "positional" if len(extra) == 1 else "positionals"
-        _fail(f"unexpected {noun}: {', '.join(style(raw, Styles.STR) for raw in extra)}")
+        msg = f"unexpected {noun}: {', '.join(style(raw, Styles.STR_VALUE) for raw in extra)}"
+        raise _ParseError(msg)
 
     return {
         field.name: _convert(field.name, field, raw)
@@ -137,5 +173,6 @@ def _parse_positionals(
     }
 
 
-def _fail(msg: str) -> NoReturn:
-    sys.exit(f"{style(Fragments.ERROR_PREFIX, Styles.ERROR_PREFIX)}{msg}")
+@final
+class _ParseError(Exception):
+    """Bad command-line input; `parse_args` turns it into usage + error message + exit."""

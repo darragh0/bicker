@@ -27,7 +27,7 @@ type HelpKey = Literal["-h", "--help"]
 # Supported value types; bool is supported separately, for flags only
 _SCALAR_TYPES: Final[tuple[type, ...]] = (str, int, float)
 # Literal can't hold floats (PEP 586); each type maps to how its choices are styled
-LITERAL_TYPES: Final[dict[type, Style]] = {str: Styles.STR, int: Styles.INT}
+LITERAL_TYPES: Final[dict[type, Style]] = {str: Styles.STR_VALUE, int: Styles.INT_VALUE}
 
 
 class Converter(Protocol):
@@ -43,6 +43,8 @@ class _Declaration:
     default: object
     short: str | None = None
     is_pos: bool = False
+    custom_metavar: str | None = None
+    description: str | None = None
 
 
 @final
@@ -56,7 +58,9 @@ class Field(_Declaration):
         return f"--{self.name.replace('_', '-')}"
 
     @property
-    def label_style(self) -> Style:
+    def style(self) -> Style:
+        if self.is_flag:
+            return Styles.FLAG
         return Styles.POS if self.is_pos else Styles.OPT
 
     @property
@@ -72,22 +76,42 @@ class Field(_Declaration):
         """The values of a `Literal` type, or `()` for any other type."""
         return get_args(self.tp) if get_origin(self.tp) is Literal else ()
 
+    @property
+    def metavar(self) -> str | None:
+        """The help placeholder: the custom one if set, else `{a,b}` for choices or `NAME`."""
+        if self.is_flag:
+            return None
+        if self.custom_metavar:
+            return self.custom_metavar
+        if self.choices:
+            return "{" + ",".join(map(str, self.choices)) + "}"
+        return self.name.upper()
+
 
 # T only in the return type is intentional: it's inferred from the field's annotation
 @overload
-def pos[T]() -> T: ...  # pyright: ignore[reportInvalidTypeVarUse]
+def pos[T](*, description: str | None = None) -> T: ...  # pyright: ignore[reportInvalidTypeVarUse]
 @overload
-def pos[T](default: T) -> T: ...
-def pos(default: object = MISSING) -> object:
-    return _Declaration(default=default, is_pos=True)
+def pos[T](default: T, *, description: str | None = None) -> T: ...
+def pos(default: object = MISSING, *, description: str | None = None) -> object:
+    return _Declaration(default=default, is_pos=True, description=description)
 
 
-def opt[T](default: T, short: str | None = None) -> T:
-    return cast("T", _Declaration(default=default, short=short))
+def opt[T](
+    default: T,
+    short: str | None = None,
+    *,
+    metavar: str | None = None,
+    description: str | None = None,
+) -> T:
+    decl = _Declaration(
+        default=default, short=short, custom_metavar=metavar, description=description
+    )
+    return cast("T", decl)
 
 
-def flag(short: str | None = None) -> bool:
-    return opt(default=False, short=short)
+def flag(short: str | None = None, *, description: str | None = None) -> bool:
+    return opt(default=False, short=short, description=description)
 
 
 def collect_fields(spec: type[object], help_keys: Collection[HelpKey]) -> list[Field]:
@@ -101,7 +125,15 @@ def collect_fields(spec: type[object], help_keys: Collection[HelpKey]) -> list[F
             msg = f"{name!r} must be declared with pos(), opt() or flag()"
             raise TypeError(msg)
 
-        field = Field(name=name, tp=tp, default=decl.default, short=decl.short, is_pos=decl.is_pos)
+        field = Field(
+            name=name,
+            tp=tp,
+            default=decl.default,
+            short=decl.short,
+            is_pos=decl.is_pos,
+            custom_metavar=decl.custom_metavar,
+            description=decl.description,
+        )
         _check_type(field)
         fields.append(field)
 
