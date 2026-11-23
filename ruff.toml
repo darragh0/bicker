@@ -37,6 +37,10 @@ extend-ignore = [
   "CPY001",
 ]
 
+[lint.per-file-ignores]
+# Plain asserts are how pytest works; tests/ is not a package
+"tests/**" = ["S101", "INP001"]
+
 [lint.pylint]
 # Max args for function/method
 max-args = 20
