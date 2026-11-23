@@ -32,7 +32,7 @@ args = parse_args(Args)
 ```
 
 `args` is an `Args` instance, so your type checker knows `args.width` is an `int` and
-`args.fmt` is `Literal["png", "jpg"]`. No casts, no stubs, no plugins.
+`args.fmt` is `Literal["png", "jpg"]`.
 
 ```console
 $ python resize.py -h
