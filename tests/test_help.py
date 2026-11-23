@@ -1,4 +1,4 @@
-from typing import Literal
+from typing import Literal, TypedDict, Unpack
 
 import pytest
 
@@ -13,9 +13,18 @@ class Args:
     verbose: bool = flag("-v")
 
 
-def help_text(capsys: pytest.CaptureFixture[str], *argv: str, **kwargs: object) -> str:
+class HelpOptions(TypedDict, total=False):
+    description: str
+    epilog: str
+    examples: list[str]
+    use_shorthand_usage: bool
+
+
+def help_text(
+    capsys: pytest.CaptureFixture[str], *argv: str, **options: Unpack[HelpOptions]
+) -> str:
     with pytest.raises(SystemExit) as exc:
-        _ = parse_args(Args, list(argv), prog="tool", **kwargs)  # pyright: ignore[reportArgumentType]
+        _ = parse_args(Args, list(argv), prog="tool", **options)
     assert exc.value.code == 0
     return capsys.readouterr().out
 
