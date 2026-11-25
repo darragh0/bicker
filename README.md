@@ -91,8 +91,9 @@ Command lines follow GNU conventions: options and positionals can be mixed, valu
 be attached (`--width=400`, `-w400`), short flags can be grouped (`-vq`), long keys can be
 shortened to any unambiguous prefix (`--wid`), and everything after `--` is a positional.
 
-`parse_args` also takes `description=`, `epilog=` and `examples=` for the help page, and
-a few settings like `prog=` and `help_keys=`. See its docstring for all of them.
+`parse_args` also takes `description=`, `epilog=` and `examples=` for the help page,
+`version=` to add a `--version` option, and a few settings like `prog=` and `help_keys=`.
+See its docstring for all of them.
 
 ## Not supported (yet)
 
@@ -100,7 +101,6 @@ a few settings like `prog=` and `help_keys=`. See its docstring for all of them.
 - Other value types (e.g. `Path`, `Enum`)
 - Required options
 - Short-only options
-- `--version`
 - Custom colors
 
 Feature requests are welcome: [open an issue](https://github.com/darragh0/bicker/issues).

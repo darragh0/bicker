@@ -8,7 +8,7 @@ from bicker._style import Style, Styles, style, visible_len
 if TYPE_CHECKING:
     from collections.abc import Collection, Iterable, Sequence
 
-    from bicker._spec import Field, HelpKey
+    from bicker._spec import Field, HelpKey, VersionKey
 
 _PAD: Final = "  "
 
@@ -19,8 +19,11 @@ class HelpConfig:
     """The `parse_args` settings that shape help and usage output."""
 
     prog: str
-    help_keys: Collection[HelpKey]
+    help_keys: Sequence[HelpKey]
     help_description: str
+    # Empty when there's no version to show
+    version_keys: Sequence[VersionKey]
+    version_description: str
     description: str | None
     epilog: str | None
     examples: Sequence[str]
@@ -56,6 +59,9 @@ class HelpRenderer:
         if cfg.help_keys:
             help_entry = self._option_entry(cfg.help_keys, Styles.FLAG, None)
             opt_entries.append((help_entry, cfg.help_description))
+        if cfg.version_keys:
+            version_entry = self._option_entry(cfg.version_keys, Styles.FLAG, None)
+            opt_entries.append((version_entry, cfg.version_description))
 
         # Descriptions start in one column across both sections
         width = max((visible_len(entry) for entry, _ in pos_entries + opt_entries), default=0)

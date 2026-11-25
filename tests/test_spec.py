@@ -64,7 +64,7 @@ class InvalidNargs:
         (BadLong, "has invalid long 'x'"),
         (DuplicateShort, "option keys used more than once: -a"),
         (DuplicateLong, "option keys used more than once: --b"),
-        (HelpClash, "reserved for help"),
+        (HelpClash, "reserved by help_keys"),
         (OptionalBeforeRequired, "required positionals must precede optional ones"),
         (VariableListNotLast, "only the last positional can take a variable number"),
         (NargsOnNonList, "has nargs but isn't a list"),

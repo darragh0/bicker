@@ -18,12 +18,13 @@ from typing import (
 from bicker._style import Styles
 
 if TYPE_CHECKING:
-    from collections.abc import Collection, Mapping, Sequence
+    from collections.abc import Mapping, Sequence
 
     from bicker._style import Style
 
 
 type HelpKey = Literal["-h", "--help"]
+type VersionKey = Literal["-V", "--version"]
 
 # How many values a list field takes: exactly `n`, or `(min, max)` with `None` for no max
 type Nargs = int | tuple[int, int | None]
@@ -220,7 +221,8 @@ def flag(
     return opt(default=False, short=short, long=long, description=description)
 
 
-def collect_fields(spec: type[object], help_keys: Collection[HelpKey]) -> list[Field]:
+def collect_fields(spec: type[object], reserved: Mapping[str, str]) -> list[Field]:
+    """Read `spec`'s declarations, checking none use a `reserved` key (mapped to its setting)."""
 
     fields: list[Field] = []
     hints: dict[str, object] = get_type_hints(spec)
@@ -247,8 +249,7 @@ def collect_fields(spec: type[object], help_keys: Collection[HelpKey]) -> list[F
         fields.append(field)
 
     _check_keys(fields)
-    if help_keys:
-        _check_help_clash(fields, help_keys)
+    _check_reserved(fields, reserved)
     _check_positional_order(fields)
 
     return fields
@@ -306,13 +307,13 @@ def _check_keys(fields: Sequence[Field]) -> None:
         raise TypeError(msg)
 
 
-def _check_help_clash(fields: Sequence[Field], help_keys: Collection[HelpKey]) -> None:
+def _check_reserved(fields: Sequence[Field], reserved: Mapping[str, str]) -> None:
     for field in fields:
         for key in field.keys:
-            if key in help_keys:
+            if setting := reserved.get(key):
                 msg = (
-                    f"{field.name!r} uses {key!r}, which is reserved for help "
-                    "-- free it with parse_args(..., help_keys=...)"
+                    f"{field.name!r} uses {key!r}, which is reserved by {setting} "
+                    f"-- free it with parse_args(..., {setting}=...)"
                 )
                 raise TypeError(msg)
 

@@ -4,6 +4,17 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- `parse_args(..., version="1.2.0")` adds a `--version` option that prints the program name
+  and version; `version_keys=` adds `-V`
+
+### Changed
+
+- `help_keys` is now typed as a `Sequence`, so mypy accepts one-key tuples like `("-h",)`
+
 ## [1.0.0] - 2026-11-23
 
 Initial release.
@@ -15,4 +26,5 @@ Initial release.
 - Colored output on terminals, respecting `NO_COLOR`
 - Python 3.12+, no dependencies
 
+[Unreleased]: https://github.com/darragh0/bicker/compare/v1.0.0...HEAD
 [1.0.0]: https://github.com/darragh0/bicker/releases/tag/v1.0.0

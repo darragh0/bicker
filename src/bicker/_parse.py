@@ -12,17 +12,20 @@ from bicker._spec import LITERAL_TYPES, collect_fields
 from bicker._style import Style, Styles, style
 
 if TYPE_CHECKING:
-    from collections.abc import Collection, Mapping, Sequence
+    from collections.abc import Mapping, Sequence
 
-    from bicker._spec import Field, HelpKey
+    from bicker._spec import Field, HelpKey, VersionKey
 
 
 def parse_args[T](
     spec: type[T],
     argv: list[str] | tuple[str, ...] | None = None,
     *,
-    help_keys: Collection[HelpKey] = ("-h", "--help"),
+    help_keys: Sequence[HelpKey] = ("-h", "--help"),
     help_description: str = "Show this message and exit",
+    version: str | None = None,
+    version_keys: Sequence[VersionKey] = ("--version",),
+    version_description: str = "Show the version and exit",
     prog: str | None = None,
     description: str | None = None,
     epilog: str | None = None,
@@ -43,6 +46,10 @@ def parse_args[T](
         argv: The arguments to parse. Defaults to `sys.argv[1:]`.
         help_keys: The keys that print help and exit. Pass `()` to disable help.
         help_description: The help text for the help option itself.
+        version: The version to print, e.g. `"1.2.0"`. Without it, there's no version option.
+        version_keys: The keys that print the program name and version, then exit. Add `"-V"`
+            to support the short key too.
+        version_description: The help text for the version option itself.
         prog: The program name shown in help. Defaults to the file name of `sys.argv[0]`.
         description: Text shown below the usage line in help.
         epilog: Text shown at the end of help.
@@ -73,11 +80,16 @@ def parse_args[T](
         args = parse_args(Args)  # e.g. `prog in.txt -c 3 -v`
         ```
     """
-    fields = collect_fields(spec, help_keys)
+    version_keys = version_keys if version else ()
+    reserved: dict[str, str] = dict.fromkeys(help_keys, "help_keys")
+    reserved |= dict.fromkeys(version_keys, "version_keys")
+    fields = collect_fields(spec, reserved)
     cfg = HelpConfig(
         prog=prog or Path(sys.argv[0]).name,
         help_keys=help_keys,
         help_description=help_description,
+        version_keys=version_keys,
+        version_description=version_description,
         description=description,
         epilog=epilog,
         examples=examples,
@@ -92,6 +104,9 @@ def parse_args[T](
     options_part = argv[: argv.index("--")] if "--" in argv else argv
     if any(key in options_part for key in help_keys):
         print(HelpRenderer(fields, cfg, sys.stdout).help())
+        sys.exit(0)
+    if version and any(key in options_part for key in version_keys):
+        print(style(cfg.prog, Styles.PROG, sys.stdout), style(version, Styles.VERSION, sys.stdout))
         sys.exit(0)
 
     try:
