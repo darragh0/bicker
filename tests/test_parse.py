@@ -63,6 +63,20 @@ def test_custom_long_key_replaces_the_default() -> None:
     assert vars(parse_args(Renamed, ["--num", "3"])) == {"count": 3}
 
 
+type Mode = Literal["fast", "slow"]
+type Modes = list[Mode]
+
+
+class Aliased:
+    mode: Mode = opt("fast")
+    modes: Modes = opt([])
+
+
+def test_type_aliases_are_expanded() -> None:
+    args = parse_args(Aliased, ["--mode", "slow", "--modes", "fast"])
+    assert (args.mode, args.modes) == ("slow", ["fast"])
+
+
 class Points:
     point: list[int] = pos(nargs=2)
     name: str = pos()
@@ -94,6 +108,7 @@ class Counts:
         (Renamed, ["--count", "3"], "option --count not recognized"),
         (Points, ["1"], "point expects exactly 2 values, got 1"),
         (Points, ["1", "2", "bob", "a", "b", "c"], 'unexpected positional: "c"'),
+        (Aliased, ["--mode", "x"], '--mode must be one of: "fast", "slow"'),
         (Counts, [], "--tags expects 1 to 3 values, got 0"),
         (Counts, ["-t", "a", "--ids", "1", "--ids", "2"], "--ids expects at most 1 value, got 2"),
         (Counts, ["-t", "a", "--names", "x"], "--names expects at least 2 values, got 1"),

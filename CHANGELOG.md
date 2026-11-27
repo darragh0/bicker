@@ -15,6 +15,11 @@ All notable changes to this project are documented here. The format follows
 
 - `help_keys` is now typed as a `Sequence`, so mypy accepts one-key tuples like `("-h",)`
 
+### Fixed
+
+- Fields typed with a `type X = ...` alias (e.g. `type Mode = Literal[...]`) were rejected as
+  unsupported
+
 ## [1.0.0] - 2026-11-23
 
 Initial release.

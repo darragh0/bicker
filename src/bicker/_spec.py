@@ -3,10 +3,12 @@ from __future__ import annotations
 import re
 from collections import Counter
 from dataclasses import MISSING, dataclass
+from types import GenericAlias
 from typing import (
     TYPE_CHECKING,
     Final,
     Literal,
+    TypeAliasType,
     cast,
     final,
     get_args,
@@ -235,7 +237,7 @@ def collect_fields(spec: type[object], reserved: Mapping[str, str]) -> list[Fiel
 
         field = Field(
             name=name,
-            typ=typ,
+            typ=_expand_aliases(typ),
             default=decl.default,
             short=decl.short,
             custom_long=decl.custom_long,
@@ -253,6 +255,16 @@ def collect_fields(spec: type[object], reserved: Mapping[str, str]) -> list[Fiel
     _check_positional_order(fields)
 
     return fields
+
+
+def _expand_aliases(typ: object) -> object:
+    """Replace `type X = ...` aliases with what they stand for, including inside `list[X]`."""
+    while isinstance(typ, TypeAliasType):
+        typ = cast("object", typ.__value__)
+    if get_origin(typ) is list:
+        args: tuple[object, ...] = get_args(typ)
+        return GenericAlias(list, (_expand_aliases(args[0]),))
+    return typ
 
 
 def _check_type(field: Field) -> None:
