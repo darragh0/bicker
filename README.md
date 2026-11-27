@@ -123,10 +123,12 @@ match args.command:
         print(f"testing {pattern or 'everything'}")
 ```
 
-- A command's name is its class name in kebab-case (`RunTests` is `run-tests`)
+- A command's name is its class name in kebab-case (`RunTests` is `run-tests`); set another
+  name or aliases with `@command("ls", aliases=("l",))`
 - Its docstring is its help text
 - Options outside the command (like `-v`) can go before or after it
 - Commands can have commands of their own
+- A command is required, unless the annotation includes `None`: `Build | Test | None`
 - A class with a `cmd()` can't have positionals
 - Many commands read best as an alias: `type Command = Build | Test | Deploy`
 

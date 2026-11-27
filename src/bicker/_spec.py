@@ -21,7 +21,7 @@ from typing import (
 from bicker._style import Styles
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping, Sequence
+    from collections.abc import Callable, Mapping, Sequence
 
     from bicker._style import Style
 
@@ -34,6 +34,8 @@ type Nargs = int | tuple[int, int | None]
 
 _SHORT_KEY: Final = re.compile(r"-[A-Za-z0-9]")
 _LONG_KEY: Final = re.compile(r"--[A-Za-z0-9][A-Za-z0-9-]*")
+
+_COMMAND_NAME: Final = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]*")
 
 # Where a class name gets a dash in its command name: `RunTests` -> `run-tests`, `HTTPGet` ->
 # `http-get`
@@ -147,16 +149,20 @@ class Spec:
     """A class of declarations, as read by `collect_spec`: the program, or one of its commands."""
 
     cls: type[object]
+    # Set with `@command`; the name defaults to the class name in kebab-case
+    name: str
+    aliases: tuple[str, ...]
     options: tuple[Field, ...]
     positionals: tuple[Field, ...]
     # The `cmd()` attribute's name, and its commands by name; `None` and empty without one
     command_attr: str | None
     commands: Mapping[str, Spec]
+    # False when the `cmd()` annotation includes `None`
+    command_required: bool
 
-    @property
-    def name(self) -> str:
-        """The command name: the class name in kebab-case, e.g. `RunTests` -> `run-tests`."""
-        return _WORD_BOUNDARY.sub("-", self.cls.__name__).lower()
+    def find_command(self, word: str) -> Spec | None:
+        """Get the command named or aliased `word`, if any."""
+        return next((c for c in self.commands.values() if word in (c.name, *c.aliases)), None)
 
     @property
     def description(self) -> str | None:
@@ -167,6 +173,18 @@ class Spec:
 @final
 class _CommandDeclaration:
     """What `cmd()` returns; the commands are read from the field's annotation."""
+
+
+@final
+@dataclass(frozen=True)
+class _CommandNames:
+    """What `@command` stores on a class."""
+
+    name: str | None
+    aliases: tuple[str, ...]
+
+
+_COMMAND_NAMES_ATTR: Final = "__bicker_command__"
 
 
 # T only in the return type is intentional: it's inferred from the field's annotation
@@ -302,13 +320,42 @@ def cmd[T]() -> T:  # type: ignore[type-var]  # pyright: ignore[reportInvalidTyp
 
     Each class declares its command's arguments, like the class passed to `parse_args`, and
     its docstring is the command's help text. A command's name is its class name in kebab-case,
-    e.g. `run-tests` for `RunTests`. Options declared next to `cmd()` can be given before or
-    after the command. A class with a command can't have positionals.
+    e.g. `run-tests` for `RunTests`, unless set with `@command`. Options declared next to
+    `cmd()` can be given before or after the command. A class with a command can't have
+    positionals. Add `| None` to the annotation to make the command optional.
 
     Returns:
         A placeholder that `parse_args` replaces with an instance of the given command's class.
     """
     return cast("T", _CommandDeclaration())
+
+
+def command[C: type[object]](
+    name: str | None = None,
+    *,
+    aliases: list[str] | tuple[str, ...] = (),
+) -> Callable[[C], C]:
+    """Set a command class's name and aliases, as a class decorator.
+
+    Args:
+        name: The command's name. Defaults to the class name in kebab-case.
+        aliases: Other names the command can be given as, e.g. `("l",)`.
+
+    Returns:
+        A decorator that returns the class unchanged, apart from its command names.
+
+    Example:
+        ```python
+        @command("ls", aliases=("l",))
+        class ListFiles: ...
+        ```
+    """
+
+    def decorate(cls: C) -> C:
+        setattr(cls, _COMMAND_NAMES_ATTR, _CommandNames(name, tuple(aliases)))
+        return cls
+
+    return decorate
 
 
 def collect_spec(
@@ -323,6 +370,7 @@ def collect_spec(
     fields: list[Field] = []
     command_attr: str | None = None
     command_classes: tuple[type[object], ...] = ()
+    command_required = True
     hints: dict[str, object] = get_type_hints(cls)
 
     for name, typ in hints.items():
@@ -336,7 +384,8 @@ def collect_spec(
             msg = f"{cls.__name__} has more than one cmd()"
             raise TypeError(msg)
         else:
-            command_attr, command_classes = name, _command_classes(name, typ)
+            command_attr = name
+            command_classes, command_required = _command_classes(name, typ)
 
     options = tuple(field for field in fields if not field.is_pos)
     positionals = tuple(field for field in fields if field.is_pos)
@@ -348,20 +397,42 @@ def collect_spec(
         raise TypeError(msg)
 
     commands: dict[str, Spec] = {}
+    taken: set[str] = set()
     for command_cls in command_classes:
         command = collect_spec(command_cls, reserved, [*inherited, *options])
-        if command.name in commands:
-            msg = f"command name {command.name!r} used more than once"
-            raise TypeError(msg)
+        for word in (command.name, *command.aliases):
+            if word in taken:
+                msg = f"command name {word!r} used more than once"
+                raise TypeError(msg)
+            taken.add(word)
         commands[command.name] = command
 
+    name, aliases = _command_names(cls)
     return Spec(
         cls=cls,
+        name=name,
+        aliases=aliases,
         options=options,
         positionals=positionals,
         command_attr=command_attr,
         commands=commands,
+        command_required=command_required,
     )
+
+
+def _command_names(cls: type[object]) -> tuple[str, tuple[str, ...]]:
+    """Get a command class's name and aliases: from `@command`, else its kebab-case name."""
+    default = _WORD_BOUNDARY.sub("-", cls.__name__).lower()
+    # Read from the class itself, so a subclass doesn't inherit its base's names
+    names: object = cls.__dict__.get(_COMMAND_NAMES_ATTR)
+    if not isinstance(names, _CommandNames):
+        return default, ()
+
+    for word in (names.name, *names.aliases):
+        if word is not None and not _COMMAND_NAME.fullmatch(word):
+            msg = f"{cls.__name__} has invalid command name {word!r}"
+            raise TypeError(msg)
+    return names.name or default, names.aliases
 
 
 def _field(name: str, typ: object, decl: _Declaration) -> Field:
@@ -382,15 +453,17 @@ def _field(name: str, typ: object, decl: _Declaration) -> Field:
     return field
 
 
-def _command_classes(name: str, typ: object) -> tuple[type[object], ...]:
-    """Get the classes in a `cmd()` annotation: one class, or a union of several."""
+def _command_classes(name: str, typ: object) -> tuple[tuple[type[object], ...], bool]:
+    """Get the classes in a `cmd()` annotation, and whether it's required (no `| None`)."""
     typ = _expand_aliases(typ)
     members: tuple[object, ...] = get_args(typ) if get_origin(typ) is UnionType else (typ,)
-    classes = tuple(m for m in members if isinstance(m, type) and m is not NoneType)
-    if len(classes) != len(members):
+    required = NoneType not in members
+    members = tuple(m for m in members if m is not NoneType)
+    classes = tuple(m for m in members if isinstance(m, type))
+    if not classes or len(classes) != len(members):
         msg = f"{name!r} must be annotated with a class or a union of classes"
         raise TypeError(msg)
-    return classes
+    return classes, required
 
 
 def _parsed_type(typ: object) -> object:

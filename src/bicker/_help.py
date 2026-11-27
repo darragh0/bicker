@@ -56,8 +56,8 @@ class HelpRenderer:
         cfg = self._cfg
 
         command_entries = [
-            (self._st(name, Styles.COMMAND), _summary(command.description))
-            for name, command in self._spec.commands.items()
+            (self._command_entry(command), _summary(command.description))
+            for command in self._spec.commands.values()
         ]
         pos_entries = [
             (self._pos_label(field, Styles.OPTIONAL_POS), field.description)
@@ -122,8 +122,10 @@ class HelpRenderer:
         positionals = [
             self._pos_label(field, Styles.USAGE_OPTIONAL_POS) for field in self._positionals
         ]
-        if self._spec.command_attr:
-            positionals.append(self._st(self._spec.command_attr, Styles.COMMAND))
+        if attr := self._spec.command_attr:
+            optional_style = Styles.USAGE_OPTIONAL_POS
+            command_style = Styles.COMMAND if self._spec.command_required else optional_style
+            positionals.append(self._st(attr, command_style))
         heading = [self._st("Usage", Styles.HEADING), self._st(self._prog, Styles.PROG)]
 
         return " ".join([*heading, *options, *positionals])
@@ -149,6 +151,12 @@ class HelpRenderer:
         text = self._st(field.keys[0], field.style) + self._metavar(field.metavar)
         return text if field.is_required else self._st(text, Styles.USAGE_OPT)
 
+    def _command_entry(self, command: Spec) -> str:
+        """`ls, l`: the command's name, then its aliases."""
+        return ", ".join(
+            self._st(name, Styles.COMMAND) for name in (command.name, *command.aliases)
+        )
+
     def _field_entry(self, field: Field) -> _Entry:
         return self._option_entry(field.keys, field.style, field.metavar), field.description
 
@@ -168,7 +176,7 @@ class HelpRenderer:
 
         for word in example.split():
             # Past a command's name, its own options are known too
-            if command := spec.commands.get(word):
+            if command := spec.find_command(word):
                 spec = command
                 styles_by_key |= _styles_by_key(command.options)
                 words.append(self._st(word, Styles.COMMAND))

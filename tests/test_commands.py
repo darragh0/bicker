@@ -1,8 +1,9 @@
 import re
+from typing import Literal
 
 import pytest
 
-from bicker import cmd, flag, opt, parse_args, pos
+from bicker import cmd, command, flag, opt, parse_args, pos
 
 
 class Add:
@@ -163,7 +164,11 @@ class TwoCommands:
 
 
 class NotAClass:
-    command: Build | int | None = cmd()
+    command: Build | Literal["x"] = cmd()
+
+
+class OnlyNone:
+    command: None = cmd()
 
 
 class Clash:
@@ -182,12 +187,33 @@ class SameName:
     command: Build | Build2 = cmd()
 
 
+@command("no spaces")
+class BadNameCmd:
+    pass
+
+
+class BadName:
+    command: BadNameCmd = cmd()
+
+
+@command(aliases=("build",))
+class Make:
+    pass
+
+
+class AliasClash:
+    command: Build | Make = cmd()
+
+
 @pytest.mark.parametrize(
     ("spec", "message"),
     [
         (WithPositional, "WithPositional has a cmd(), so it can't have positionals"),
         (TwoCommands, "TwoCommands has more than one cmd()"),
         (NotAClass, "'command' must be annotated with a class or a union of classes"),
+        (OnlyNone, "'command' must be annotated with a class or a union of classes"),
+        (BadName, "BadNameCmd has invalid command name 'no spaces'"),
+        (AliasClash, "command name 'build' used more than once"),
         (Clash, "option keys used more than once: -r, --release"),
         (SameName, "command name 'build' used more than once"),
     ],
@@ -195,3 +221,61 @@ class SameName:
 def test_declaration_errors(spec: type[object], message: str) -> None:
     with pytest.raises(TypeError, match=re.escape(message)):
         _ = parse_args(spec, [])
+
+
+@command("ls", aliases=("l", "list"))
+class ListFiles:
+    """List the files."""
+
+    all: bool = flag(short="-a")
+
+
+class ListMore(ListFiles):
+    """Not renamed: `@command` names aren't inherited."""
+
+
+class Tool:
+    verbose: bool = flag(short="-v")
+    command: ListFiles | ListMore | None = cmd()
+
+
+def test_command_is_optional_with_none() -> None:
+    args = parse_args(Tool, ["-v"])
+    assert args.command is None
+    assert args.verbose
+
+
+@pytest.mark.parametrize("name", ["ls", "l", "list"])
+def test_renamed_command_and_aliases(name: str) -> None:
+    args = parse_args(Tool, [name, "-a"])
+    assert isinstance(args.command, ListFiles)
+    assert args.command.all
+
+
+def test_decorator_names_are_not_inherited() -> None:
+    assert isinstance(parse_args(Tool, ["list-more"]).command, ListMore)
+
+
+def test_help_shows_aliases_and_an_optional_command(capsys: pytest.CaptureFixture[str]) -> None:
+    with pytest.raises(SystemExit):
+        _ = parse_args(Tool, ["-h"], prog="tool", examples=["l -a"])
+    assert capsys.readouterr().out == (
+        "Usage: tool [-v] [command]\n"
+        "\n"
+        "Commands:\n"
+        "  ls, l, list    List the files\n"
+        "  list-more      Not renamed: `@command` names aren't inherited\n"
+        "\n"
+        "Options:\n"
+        "  -v, --verbose\n"
+        "  -h, --help     Show this message and exit\n"
+        "\n"
+        "Examples:\n"
+        "  tool l -a\n"
+    )
+
+
+def test_alias_help_uses_the_name(capsys: pytest.CaptureFixture[str]) -> None:
+    with pytest.raises(SystemExit):
+        _ = parse_args(Tool, ["l", "-h"], prog="tool")
+    assert capsys.readouterr().out.startswith("Usage: tool ls [-a]\n")

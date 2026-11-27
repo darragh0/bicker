@@ -137,7 +137,7 @@ def _find_commands(root: Spec, argv: Sequence[str]) -> tuple[list[Spec], list[st
             _, after = getopt(rest[start:], *_getopt_spec(fields_by_key))
         except GetoptError:
             break
-        if not after or (command := path[-1].commands.get(after[0])) is None:
+        if not after or (command := path[-1].find_command(after[0])) is None:
             break
 
         start = len(rest) - len(after)
@@ -272,11 +272,14 @@ def _parse_positionals(spec: Spec, raw_positionals: Sequence[str]) -> dict[Field
     """
     if spec.commands:
         names = ", ".join(style(name, Styles.COMMAND) for name in spec.commands)
-        if not raw_positionals:
+        if raw_positionals:
+            raw = style(raw_positionals[0], Styles.STR_VALUE)
+            msg = f"unknown command {raw} (one of: {names})"
+            raise _ParseError(msg)
+        if spec.command_required:
             msg = f"missing command (one of: {names})"
             raise _ParseError(msg)
-        msg = f"unknown command {style(raw_positionals[0], Styles.STR_VALUE)} (one of: {names})"
-        raise _ParseError(msg)
+        return {}
 
     pos_fields = spec.positionals
     values: dict[Field, object] = {}
