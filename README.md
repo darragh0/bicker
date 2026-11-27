@@ -68,6 +68,7 @@ Output is colored in a terminal, unless `NO_COLOR` is set.
 | `opt()`                    | Option that's `None` unless given (annotate it `T \| None`) |
 | `opt(required=True)`       | Required option                                             |
 | `flag(short="-v")`         | `bool` option with no value: `False` unless given           |
+| `flag(default=True)`       | `bool` option that's `True` unless `--no-name` is given     |
 
 Each also takes:
 

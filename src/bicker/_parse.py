@@ -137,7 +137,7 @@ def _find_commands(root: Spec, argv: Sequence[str]) -> tuple[list[Spec], list[st
 
     while path[-1].commands:
         # Unlike gnu_getopt, getopt stops at the first positional: here, the command name
-        fields_by_key = {key: f for spec in path for f in spec.options for key in f.keys}
+        fields_by_key = {key: f for spec in path for f in spec.options for key in f.all_keys}
         try:
             _, after = getopt(rest[start:], *_getopt_spec(fields_by_key))
         except GetoptError:
@@ -191,7 +191,7 @@ def _parse_options(
     argv: Sequence[str],
 ) -> tuple[dict[Field, object], list[str]]:
 
-    fields_by_key = {key: field for field in option_fields for key in field.keys}
+    fields_by_key = {key: field for field in option_fields for key in field.all_keys}
 
     try:
         option_pairs, raw_positionals = gnu_getopt(argv, *_getopt_spec(fields_by_key))
@@ -203,7 +203,7 @@ def _parse_options(
     # raw in this context: str version of object (e.g., "3" = raw version of 3)
     for key, raw in option_pairs:
         field = fields_by_key[key]
-        value = True if field.is_flag else _convert(key, field, raw)
+        value = key != field.negative_key if field.is_flag else _convert(key, field, raw)
         if field.is_list:
             repeated.setdefault(field, []).append(value)
         else:

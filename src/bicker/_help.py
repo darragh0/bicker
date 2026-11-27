@@ -132,8 +132,7 @@ class HelpRenderer:
             shown = tuple(field for field in self._options if field.is_required)
             options.append(self._st("options", Styles.USAGE_OPT))
 
-        # "..." after a list option: it can be repeated
-        options += [self._usage_option(field) + self._ellipsis(field) for field in shown]
+        options += [self._usage_option(field) for field in shown]
 
         positionals = [
             self._pos_label(field, Styles.USAGE_OPTIONAL_POS) for field in self._positionals
@@ -160,12 +159,15 @@ class HelpRenderer:
         return self._st(field.name + self._ellipsis(field), style_)
 
     def _usage_option(self, field: Field) -> str:
-        """`[-v]`, `[-c COUNT]` or `--color {red,blue}`: the first key, plus a placeholder.
+        """`[-v]`, `[-t TAG]...` or `-n NAME`: brackets mark an option as optional."""
+        # "..." after a list option: it can be repeated
+        if field.is_required:
+            return self._usage_key(field) + self._ellipsis(field)
+        return self._st(self._usage_key(field), Styles.USAGE_OPT) + self._ellipsis(field)
 
-        Brackets mark an option as optional, so a required one has none.
-        """
-        text = self._st(field.keys[0], field.style) + self._metavar(field.metavar)
-        return text if field.is_required else self._st(text, Styles.USAGE_OPT)
+    def _usage_key(self, field: Field) -> str:
+        """`-c COUNT` or `--color {red,blue}`: the first key, plus a placeholder."""
+        return self._st(_shown_keys(field)[0], field.style) + self._metavar(field.metavar)
 
     def _command_entry(self, command: Spec) -> str:
         """`ls, l`: the command's name, then its aliases."""
@@ -174,7 +176,8 @@ class HelpRenderer:
         )
 
     def _field_entry(self, field: Field) -> _Entry:
-        return self._option_entry(field.keys, field.style, field.metavar), self._field_words(field)
+        entry = self._option_entry(_shown_keys(field), field.style, field.metavar)
+        return entry, self._field_words(field)
 
     def _field_words(self, field: Field) -> list[str]:
         """Split the description into words, then add `[default: ...]` if it's shown."""
@@ -262,4 +265,11 @@ def _summary(description: str | None) -> str | None:
 
 
 def _styles_by_key(options: Iterable[Field]) -> dict[str, Style]:
-    return {key: field.style for field in options for key in field.keys}
+    return {key: field.style for field in options for key in field.all_keys}
+
+
+def _shown_keys(field: Field) -> tuple[str, ...]:
+    """Get the keys as help shows them: a negatable flag's long key as `--[no-]color`."""
+    if not field.negative_key:
+        return field.keys
+    return tuple(f"--[no-]{key[2:]}" if key == field.long_key else key for key in field.keys)

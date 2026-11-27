@@ -214,7 +214,7 @@ class AliasClash:
         (OnlyNone, "'command' must be annotated with a class or a union of classes"),
         (BadName, "BadNameCmd has invalid command name 'no spaces'"),
         (AliasClash, "command name 'build' used more than once"),
-        (Clash, "option keys used more than once: -r, --release"),
+        (Clash, "'release' uses -r, which a global option already uses"),
         (SameName, "command name 'build' used more than once"),
     ],
 )

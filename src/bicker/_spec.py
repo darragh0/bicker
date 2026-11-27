@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import re
-from collections import Counter
 from dataclasses import MISSING, dataclass
 from enum import Enum
 from inspect import cleandoc
@@ -63,6 +62,18 @@ class Field:
     def keys(self) -> tuple[str, ...]:
         """An option's keys, short first, e.g. `("-c", "--count")`."""
         return tuple(key for key in (self.decl.short, self.long_key) if key)
+
+    @property
+    def negative_key(self) -> str | None:
+        """`--no-color` for a flag that defaults to `True`, so it can be turned off."""
+        if self.is_flag and self.decl.default is True and self.long_key:
+            return "--no-" + self.long_key.removeprefix("--")
+        return None
+
+    @property
+    def all_keys(self) -> tuple[str, ...]:
+        """Every key the option is given by: its keys, plus a negatable flag's `--no-` key."""
+        return (*self.keys, self.negative_key) if self.negative_key else self.keys
 
     @property
     def label(self) -> str:
@@ -197,7 +208,8 @@ def collect_spec(
 
     options = tuple(field for field in fields if not field.decl.is_pos)
     positionals = tuple(field for field in fields if field.decl.is_pos)
-    _check_keys([*inherited, *options])
+    _check_keys(options)
+    _check_inherited(options, inherited)
     _check_reserved(options, reserved)
     _check_positional_order(positionals)
     if command_attr and positionals:
@@ -353,16 +365,33 @@ def _check_keys(fields: Sequence[Field]) -> None:
         if not field.keys:
             msg = f"{field.name!r} has long=False, so it needs a short key"
             raise TypeError(msg)
+        if field.is_flag and field.decl.default is True and not field.negative_key:
+            msg = f"{field.name!r} defaults to True, so it needs a long key for its --no- key"
+            raise TypeError(msg)
 
-    counts = Counter(key for field in fields for key in field.keys)
-    if duplicates := [key for key, count in counts.items() if count > 1]:
-        msg = f"option keys used more than once: {', '.join(duplicates)}"
-        raise TypeError(msg)
+    users: dict[str, list[str]] = {}
+    for field in fields:
+        for key in field.all_keys:
+            user = f"{field.name!r}" + (" (to turn it off)" if key == field.negative_key else "")
+            users.setdefault(key, []).append(user)
+    for key, names in users.items():
+        if len(names) > 1:
+            msg = f"option key {key} is used by {' and '.join(names)}"
+            raise TypeError(msg)
+
+
+def _check_inherited(options: Sequence[Field], inherited: Sequence[Field]) -> None:
+    """Check a command's options don't reuse a key of the options declared above it."""
+    taken = {key for field in inherited for key in field.all_keys}
+    for field in options:
+        if clashes := [key for key in field.all_keys if key in taken]:
+            msg = f"{field.name!r} uses {clashes[0]}, which a global option already uses"
+            raise TypeError(msg)
 
 
 def _check_reserved(fields: Sequence[Field], reserved: Mapping[str, str]) -> None:
     for field in fields:
-        for key in field.keys:
+        for key in field.all_keys:
             if setting := reserved.get(key):
                 msg = (
                     f"{field.name!r} uses {key!r}, which is reserved by {setting} "

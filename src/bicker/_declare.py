@@ -194,14 +194,17 @@ def opt(
 
 def flag(
     *,
+    default: bool = False,
     short: str | None = None,
     long: str | Literal[False] | None = None,
     description: str | None = None,
     group: str = "Options",
 ) -> bool:
-    """Declare a flag: a `bool` option without a value. Defaults to `False` unless flag is given.
+    """Declare a flag: a `bool` option without a value, which sets it to `True`.
 
     Args:
+        default: The value when the flag isn't given. With `True`, the flag also gets a
+            `--no-` key to turn it off, e.g. `--no-color` for `color`.
         short: A short key like `-v`: a dash plus one letter or digit.
         long: A long key like `--verbose`. Defaults to the field name, e.g. `--dry-run` for
             `dry_run`. Pass `False` for a short-only flag.
@@ -211,7 +214,13 @@ def flag(
     Returns:
         A placeholder that `parse_args` replaces with the parsed value.
     """
-    return opt(default=False, short=short, long=long, description=description, group=group)
+    return opt(
+        default=default,
+        short=short,
+        long=long,
+        description=description,
+        group=group,
+    )
 
 
 def cmd[T]() -> T:  # type: ignore[type-var]  # pyright: ignore[reportInvalidTypeVarUse]
