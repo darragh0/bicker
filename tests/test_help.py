@@ -8,9 +8,9 @@ from bicker import flag, opt, parse_args, pos
 class Args:
     src: str = pos(description="Image to resize")
     files: list[str] = pos([])
-    width: int = opt(800, "-w", metavar="PX", description="Target width")
+    width: int = opt(800, short="-w", metavar="PX", description="Target width")
     fmt: Literal["png", "jpg"] = opt("png")
-    verbose: bool = flag("-v")
+    verbose: bool = flag(short="-v")
 
 
 class HelpOptions(TypedDict, total=False):

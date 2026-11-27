@@ -73,8 +73,8 @@ def parse_args[T](
 
         class Args:
             src: str = pos(description="File to read")
-            count: int = opt(1, "-c", description="How many times")
-            verbose: bool = flag("-v")
+            count: int = opt(1, short="-c", description="How many times")
+            verbose: bool = flag(short="-v")
 
 
         args = parse_args(Args)  # e.g. `prog in.txt -c 3 -v`

@@ -5,7 +5,7 @@ from bicker import flag, parse_args, pos
 
 class Args:
     src: str = pos()
-    verbose: bool = flag("-v")
+    verbose: bool = flag(short="-v")
 
 
 class VersionClash:

@@ -13,6 +13,7 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- **Breaking:** `short` is keyword-only in `opt()` and `flag()`: `opt(1, short="-c")`
 - `help_keys` is now typed as a `Sequence`, so mypy accepts one-key tuples like `("-h",)`
 
 ### Fixed

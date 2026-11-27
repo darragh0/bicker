@@ -8,11 +8,11 @@ from bicker import flag, opt, parse_args, pos
 class Args:
     src: str = pos()
     dst: str = pos("out.png")
-    width: int = opt(800, "-w")
+    width: int = opt(800, short="-w")
     scale: float = opt(1.0)
-    fmt: Literal["png", "jpg"] = opt("png", "-f")
-    tags: list[str] = opt([], "-t")
-    verbose: bool = flag("-v")
+    fmt: Literal["png", "jpg"] = opt("png", short="-f")
+    tags: list[str] = opt([], short="-t")
+    verbose: bool = flag(short="-v")
     strict: bool = flag()
 
 
@@ -56,7 +56,7 @@ def test_list_default_is_not_shared() -> None:
 
 
 class Renamed:
-    count: int = opt(1, "-c", long="--num")
+    count: int = opt(1, short="-c", long="--num")
 
 
 def test_custom_long_key_replaces_the_default() -> None:
@@ -89,7 +89,7 @@ def test_nargs_positionals_are_consumed_in_order() -> None:
 
 
 class Counts:
-    tags: list[str] = opt([], "-t", nargs=(1, 3))
+    tags: list[str] = opt([], short="-t", nargs=(1, 3))
     ids: list[int] = opt([], nargs=(0, 1))
     names: list[str] = opt([], nargs=(2, None))
 

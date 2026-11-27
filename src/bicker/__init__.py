@@ -9,9 +9,9 @@ Example:
 
     class Args:
         src: str = pos(description="Image to resize")
-        width: int = opt(800, "-w", description="Target width in pixels")
-        fmt: Literal["png", "jpg"] = opt("png", "-f")
-        verbose: bool = flag("-v")
+        width: int = opt(800, short="-w", description="Target width in pixels")
+        fmt: Literal["png", "jpg"] = opt("png", short="-f")
+        verbose: bool = flag(short="-v")
 
 
     args = parse_args(Args)

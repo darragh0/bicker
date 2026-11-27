@@ -15,8 +15,8 @@ ANSI_CODE = re.compile(r"\x1b\[[0-9;]*m")
 class Args:
     src: str = pos(description="Image to resize")
     files: list[str] = pos([])
-    width: int = opt(800, "-w", metavar="PX")
-    verbose: bool = flag("-v")
+    width: int = opt(800, short="-w", metavar="PX")
+    verbose: bool = flag(short="-v")
 
 
 class Terminal(io.StringIO):

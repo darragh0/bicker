@@ -166,8 +166,8 @@ def pos(
 
 def opt[T](
     default: T,
-    short: str | None = None,
     *,
+    short: str | None = None,
     long: str | None = None,
     description: str | None = None,
     metavar: str | None = None,
@@ -204,8 +204,8 @@ def opt[T](
 
 
 def flag(
-    short: str | None = None,
     *,
+    short: str | None = None,
     long: str | None = None,
     description: str | None = None,
 ) -> bool:

@@ -16,7 +16,7 @@ class Unsupported:
 
 
 class BadShort:
-    x: int = opt(1, "x")
+    x: int = opt(1, short="x")
 
 
 class BadLong:
@@ -24,8 +24,8 @@ class BadLong:
 
 
 class DuplicateShort:
-    a: int = opt(1, "-a")
-    b: int = opt(2, "-a")
+    a: int = opt(1, short="-a")
+    b: int = opt(2, short="-a")
 
 
 class DuplicateLong:
@@ -34,7 +34,7 @@ class DuplicateLong:
 
 
 class HelpClash:
-    verbose: bool = flag("-h")
+    verbose: bool = flag(short="-h")
 
 
 class OptionalBeforeRequired:

@@ -23,9 +23,9 @@ from bicker import flag, opt, parse_args, pos
 class Args:
     src: str = pos(description="Image to resize")
     dst: str = pos("out.png", description="Where to save it")
-    width: int = opt(800, "-w", metavar="PX", description="Target width")
-    fmt: Literal["png", "jpg"] = opt("png", "-f", description="Output format")
-    verbose: bool = flag("-v", description="Print progress")
+    width: int = opt(800, short="-w", metavar="PX", description="Target width")
+    fmt: Literal["png", "jpg"] = opt("png", short="-f", description="Output format")
+    verbose: bool = flag(short="-v", description="Print progress")
 
 
 args = parse_args(Args)
@@ -62,8 +62,8 @@ Output is colored in a terminal, unless `NO_COLOR` is set.
 | --- | --- |
 | `pos()` | A required positional |
 | `pos(default)` | An optional positional (after the required ones) |
-| `opt(default, "-c")` | An option: `--name VALUE`, plus an optional short key |
-| `flag("-v")` | A `bool` option without a value, `False` unless given |
+| `opt(default, short="-c")` | An option: `--name VALUE`, plus an optional short key |
+| `flag(short="-v")` | A `bool` option without a value, `False` unless given |
 
 Each takes an optional `description=` for help. Options and flags also take `long=` to
 change their long key (which defaults to the field name, with `_` as `-`), and options
@@ -76,7 +76,7 @@ values). Annotate a field as `list[...]` of any of these to take several values:
 class Args:
     point: list[int] = pos(nargs=2)  # Exactly 2
     files: list[str] = pos()  # One or more: the remaining positionals
-    tags: list[str] = opt([], "-t")  # Repeatable: -t a -t b
+    tags: list[str] = opt([], short="-t")  # Repeatable: -t a -t b
     ids: list[int] = opt([], nargs=(1, 3))  # Given 1 to 3 times
 ```
 
