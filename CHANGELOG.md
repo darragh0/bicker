@@ -6,9 +6,7 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
-## [2.3.0] - 2026-11-27
-
-Version 2.2.0 was skipped.
+## [2.2.0] - 2026-11-27
 
 ### Added
 
@@ -58,7 +56,7 @@ Initial release.
 - Colored output on terminals, respecting `NO_COLOR`
 - Python 3.12+, no dependencies
 
-[Unreleased]: https://github.com/darragh0/bicker/compare/v2.3.0...HEAD
-[2.3.0]: https://github.com/darragh0/bicker/compare/v2.1.0...v2.3.0
+[Unreleased]: https://github.com/darragh0/bicker/compare/v2.2.0...HEAD
+[2.2.0]: https://github.com/darragh0/bicker/compare/v2.1.0...v2.2.0
 [2.1.0]: https://github.com/darragh0/bicker/compare/v2.0.0...v2.1.0
 [2.0.0]: https://github.com/darragh0/bicker/compare/v1.0.0...v2.0.0
