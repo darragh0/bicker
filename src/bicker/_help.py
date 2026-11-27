@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import shutil
 from dataclasses import MISSING, dataclass
 from typing import TYPE_CHECKING, Final, TextIO, cast, final
 
@@ -12,8 +13,11 @@ if TYPE_CHECKING:
 
 _PAD: Final = "  "
 
-# A help line before alignment: the styled keys or name, and the description's words (a
-# `[default: ...]` note counts as one)
+# Descriptions wrap at the terminal width, but never narrower than this
+_MIN_TEXT_WIDTH: Final = 20
+
+# A help line before alignment and wrapping: the styled keys or name, and the description's
+# words (a `[default: ...]` note counts as one word, so it's never split)
 type _Entry = tuple[str, list[str]]
 
 
@@ -48,6 +52,7 @@ class HelpRenderer:
         self._spec = path[-1]
         self._is_command = len(path) > 1
         self._prog = " ".join([cfg.prog, *(spec.name for spec in path[1:])])
+        self._columns = shutil.get_terminal_size().columns
 
         # Required positionals always precede optional ones, so these are in display order
         self._positionals = self._spec.positionals
@@ -85,11 +90,12 @@ class HelpRenderer:
             ("Global options", [self._field_entry(field) for field in self._global_options]),
         ]
 
-        # Descriptions start in one column across all sections
+        # Descriptions start in one column across all sections, and wrap within the terminal
         width = max(
             (visible_len(entry) for _, entries in entry_sections for entry, _ in entries),
             default=0,
         )
+        text_width = max(self._columns - len(_PAD) - width - 2, _MIN_TEXT_WIDTH)
 
         # A command's help is described by its docstring; examples and epilog are the program's
         description = self._spec.description if self._is_command else cfg.description
@@ -101,7 +107,11 @@ class HelpRenderer:
             sections.append(description)
         for title, entries in entry_sections:
             if entries:
-                lines = [_described(entry, words, width) for entry, words in entries]
+                lines = [
+                    line
+                    for entry, words in entries
+                    for line in _described(entry, words, width, text_width)
+                ]
                 sections.append(self._section(title, lines))
         if examples:
             sections.append(self._section("Examples", map(self._example, examples)))
@@ -218,11 +228,27 @@ class HelpRenderer:
         return self._st("...", Styles.ELLIPSIS) if field.is_list else ""
 
 
-def _described(entry: str, words: Sequence[str], width: int) -> str:
-    """Put the words after `entry`, padded so they start at `width` + 2."""
+def _described(entry: str, words: Sequence[str], width: int, text_width: int) -> list[str]:
+    """Put the words after `entry`, starting at `width` + 2, wrapped to `text_width`."""
     if not words:
-        return entry
-    return entry + " " * (width - visible_len(entry) + 2) + " ".join(words)
+        return [entry]
+    first, *rest = _wrap(words, text_width)
+    indent = " " * (width + 2)
+    return [
+        entry + " " * (width - visible_len(entry) + 2) + first,
+        *(indent + line for line in rest),
+    ]
+
+
+def _wrap(words: Sequence[str], width: int) -> list[str]:
+    """Fill lines with words up to `width` visible characters; a longer word gets its own line."""
+    lines = [words[0]]
+    for word in words[1:]:
+        if visible_len(lines[-1]) + 1 + visible_len(word) > width:
+            lines.append(word)
+        else:
+            lines[-1] += " " + word
+    return lines
 
 
 def _words(text: str | None) -> list[str]:

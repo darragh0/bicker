@@ -135,3 +135,31 @@ def test_help_shows_defaults_worth_showing(capsys: pytest.CaptureFixture[str]) -
 
 def test_show_defaults_can_be_turned_off(capsys: pytest.CaptureFixture[str]) -> None:
     assert "default" not in defaults_help(capsys, show_defaults=False)
+
+
+class Wordy:
+    name: str = opt(
+        "bob",
+        short="-n",
+        description="The name to greet, which can be as long as you like within reason",
+    )
+    url: str = opt("x", description="See https://example.com/a-very-long-link-that-cannot-split")
+
+
+def test_descriptions_wrap_at_the_terminal_width(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setenv("COLUMNS", "50")
+    with pytest.raises(SystemExit):
+        _ = parse_args(Wordy, ["-h"], prog="tool")
+    expected = (
+        "Options:\n"
+        "  -n, --name NAME  The name to greet, which can be\n"
+        "                   as long as you like within\n"
+        '                   reason [default: "bob"]\n'
+        "      --url URL    See\n"
+        "                   https://example.com/a-very-long-link-that-cannot-split\n"
+        '                   [default: "x"]\n'
+        "  -h, --help       Show this message and exit\n"
+    )
+    assert capsys.readouterr().out.endswith(expected)
