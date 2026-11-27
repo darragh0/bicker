@@ -53,6 +53,8 @@ class _Declaration:
     custom_metavar: str | None = None
     description: str | None = None
     nargs: Nargs | None = None
+    # The help heading an option is listed under
+    group: str = "Options"
 
 
 @final
@@ -174,6 +176,7 @@ def opt[T](
     description: str | None = None,
     metavar: str | None = None,
     nargs: Nargs | None = None,
+    group: str = "Options",
 ) -> T: ...  # type: ignore[type-var]  # pyright: ignore[reportInvalidTypeVarUse]
 @overload
 def opt[T](
@@ -184,6 +187,7 @@ def opt[T](
     description: str | None = None,
     metavar: str | None = None,
     nargs: Nargs | None = None,
+    group: str = "Options",
 ) -> T: ...
 @overload
 def opt[T](
@@ -193,6 +197,7 @@ def opt[T](
     description: str | None = None,
     metavar: str | None = None,
     nargs: Nargs | None = None,
+    group: str = "Options",
 ) -> T | None: ...
 def opt(
     default: object = None,
@@ -203,6 +208,7 @@ def opt(
     description: str | None = None,
     metavar: str | None = None,
     nargs: Nargs | None = None,
+    group: str = "Options",
 ) -> object:
     """Declare an option that takes a value.
 
@@ -221,6 +227,7 @@ def opt(
             the field name in uppercase otherwise.
         nargs: How many times a `list[T]` option can be given: exactly `n`, or `(min, max)`
             with `None` for no max. Defaults to any number, or at least 1 when `required`.
+        group: The help heading to list this option under.
 
     Returns:
         A placeholder that `parse_args` replaces with the parsed value.
@@ -232,6 +239,7 @@ def opt(
         custom_metavar=metavar,
         description=description,
         nargs=nargs,
+        group=group,
     )
 
 
@@ -240,6 +248,7 @@ def flag(
     short: str | None = None,
     long: str | None = None,
     description: str | None = None,
+    group: str = "Options",
 ) -> bool:
     """Declare a flag: a `bool` option without a value. Defaults to `False` unless flag is given.
 
@@ -248,11 +257,12 @@ def flag(
         long: A long key like `--verbose`. Defaults to the field name, e.g. `--dry-run` for
             `dry_run`.
         description: The help text for this flag.
+        group: The help heading to list this flag under.
 
     Returns:
         A placeholder that `parse_args` replaces with the parsed value.
     """
-    return opt(default=False, short=short, long=long, description=description)
+    return opt(default=False, short=short, long=long, description=description, group=group)
 
 
 def collect_fields(spec: type[object], reserved: Mapping[str, str]) -> list[Field]:
@@ -277,6 +287,7 @@ def collect_fields(spec: type[object], reserved: Mapping[str, str]) -> list[Fiel
             custom_metavar=decl.custom_metavar,
             description=decl.description,
             nargs=decl.nargs,
+            group=decl.group,
         )
         _check_type(field)
         _check_nargs(field)

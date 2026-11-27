@@ -67,9 +67,12 @@ Output is colored in a terminal, unless `NO_COLOR` is set.
 | `opt(required=True)` | A required option |
 | `flag(short="-v")` | A `bool` option without a value, `False` unless given |
 
-Each takes an optional `description=` for help. Options and flags also take `long=` to
-change their long key (which defaults to the field name, with `_` as `-`), and options
-take `metavar=` to change their placeholder in help.
+Each also takes:
+
+- `description=`: its help text
+- `long=` (options and flags): its long key, which defaults to the field name with `_` as `-`
+- `metavar=` (options): its value's placeholder in help
+- `group=` (options and flags): the help heading it's listed under, `Options` by default
 
 **Types:** `str`, `int`, `float`, or a `Literal` of strings or ints (which only allows its
 values). Annotate a field as `list[...]` of any of these to take several values:

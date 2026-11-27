@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Final, LiteralString, TextIO, final
+from typing import TYPE_CHECKING, Final, TextIO, final
 
 from bicker._style import Style, Styles, style, visible_len
 
@@ -11,6 +11,9 @@ if TYPE_CHECKING:
     from bicker._spec import Field, HelpKey, VersionKey
 
 _PAD: Final = "  "
+
+# A help line before alignment: the styled keys or name, and the description
+type _Entry = tuple[str, str | None]
 
 
 @final
@@ -51,30 +54,35 @@ class HelpRenderer:
             (self._pos_label(field, Styles.OPTIONAL_POS), field.description)
             for field in self._positionals
         ]
-        opt_entries = [
-            (self._option_entry(field.keys, field.style, field.metavar), field.description)
-            for field in self._options
-        ]
+
+        # Ungrouped options first, then each group in the order it first appears
+        groups: dict[str, list[_Entry]] = {"Options": []}
+        for field in self._options:
+            entry = self._option_entry(field.keys, field.style, field.metavar)
+            groups.setdefault(field.group, []).append((entry, field.description))
 
         if cfg.help_keys:
             help_entry = self._option_entry(cfg.help_keys, Styles.FLAG, None)
-            opt_entries.append((help_entry, cfg.help_description))
+            groups["Options"].append((help_entry, cfg.help_description))
         if cfg.version_keys:
             version_entry = self._option_entry(cfg.version_keys, Styles.FLAG, None)
-            opt_entries.append((version_entry, cfg.version_description))
+            groups["Options"].append((version_entry, cfg.version_description))
 
-        # Descriptions start in one column across both sections
-        width = max((visible_len(entry) for entry, _ in pos_entries + opt_entries), default=0)
+        entry_sections = [("Positionals", pos_entries), *groups.items()]
+
+        # Descriptions start in one column across all sections
+        width = max(
+            (visible_len(entry) for _, entries in entry_sections for entry, _ in entries),
+            default=0,
+        )
 
         sections = [self.usage()]
         if cfg.description:
             sections.append(cfg.description)
-        if pos_entries:
-            lines = [_described(entry, desc, width) for entry, desc in pos_entries]
-            sections.append(self._section("Positionals", lines))
-        if opt_entries:
-            lines = [_described(entry, desc, width) for entry, desc in opt_entries]
-            sections.append(self._section("Options", lines))
+        for title, entries in entry_sections:
+            if entries:
+                lines = [_described(entry, desc, width) for entry, desc in entries]
+                sections.append(self._section(title, lines))
         if cfg.examples:
             sections.append(self._section("Examples", map(self._example, cfg.examples)))
         if cfg.epilog:
@@ -103,7 +111,7 @@ class HelpRenderer:
     def _st(self, text: str, style_: Style) -> str:
         return style(text, style_, self._stream)
 
-    def _section(self, title: LiteralString, lines: Iterable[str]) -> str:
+    def _section(self, title: str, lines: Iterable[str]) -> str:
         styled_title = self._st(title, Styles.HEADING)
 
         return "\n".join([styled_title, *(_PAD + line for line in lines)])

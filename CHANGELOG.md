@@ -12,6 +12,7 @@ All notable changes to this project are documented here. The format follows
   and version; `version_keys=` adds `-V`
 - Required options: `opt(required=True)`
 - Options without a default: `name: str | None = opt()` is `None` unless given
+- `group=` on `opt()` and `flag()` lists them under their own heading in help
 
 ### Changed
 

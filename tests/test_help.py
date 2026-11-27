@@ -70,3 +70,33 @@ def test_help_keys_can_be_disabled(capsys: pytest.CaptureFixture[str]) -> None:
         _ = parse_args(Args, ["-h"], prog="tool", help_keys=())
     assert exc.value.code == 1
     assert "option -h not recognized" in capsys.readouterr().err
+
+
+class Grouped:
+    src: str = pos()
+    width: int = opt(800, short="-w", group="Output")
+    quiet: bool = flag(short="-q")
+    fmt: Literal["png", "jpg"] = opt("png", group="Output")
+    retries: int = opt(3, group="Network")
+
+
+def test_groups_get_their_own_heading_in_order(capsys: pytest.CaptureFixture[str]) -> None:
+    with pytest.raises(SystemExit):
+        _ = parse_args(Grouped, ["-h"], prog="tool")
+    assert capsys.readouterr().out == (
+        "Usage: tool [-w WIDTH] [-q] [--fmt {png,jpg}] [--retries RETRIES] src\n"
+        "\n"
+        "Positionals:\n"
+        "  src\n"
+        "\n"
+        "Options:\n"
+        "  -q, --quiet\n"
+        "  -h, --help             Show this message and exit\n"
+        "\n"
+        "Output:\n"
+        "  -w, --width WIDTH\n"
+        "      --fmt {png,jpg}\n"
+        "\n"
+        "Network:\n"
+        "      --retries RETRIES\n"
+    )
