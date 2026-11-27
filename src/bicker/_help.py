@@ -83,16 +83,15 @@ class HelpRenderer:
         return "\n\n".join(sections)
 
     def usage(self) -> str:
-        if not self._options:
-            options = []
-        elif self._cfg.use_shorthand_usage:
-            options = [self._st("options", Styles.USAGE_OPT)]
-        else:
-            # "..." after a list option: it can be repeated
-            options = [
-                self._st(self._usage_option(field), Styles.USAGE_OPT) + self._ellipsis(field)
-                for field in self._options
-            ]
+        # Required options are listed even in shorthand usage, since they must be given
+        shown = self._options
+        options: list[str] = []
+        if self._options and self._cfg.use_shorthand_usage:
+            shown = [field for field in self._options if field.is_required]
+            options.append(self._st("options", Styles.USAGE_OPT))
+
+        # "..." after a list option: it can be repeated
+        options += [self._usage_option(field) + self._ellipsis(field) for field in shown]
 
         positionals = [
             self._pos_label(field, Styles.USAGE_OPTIONAL_POS) for field in self._positionals
@@ -115,8 +114,12 @@ class HelpRenderer:
         return self._st(field.name + self._ellipsis(field), style_)
 
     def _usage_option(self, field: Field) -> str:
-        """`-v`, `-c COUNT` or `--color {red,blue}`: the first key, plus a placeholder."""
-        return self._st(field.keys[0], field.style) + self._metavar(field.metavar)
+        """`[-v]`, `[-c COUNT]` or `--color {red,blue}`: the first key, plus a placeholder.
+
+        Brackets mark an option as optional, so a required one has none.
+        """
+        text = self._st(field.keys[0], field.style) + self._metavar(field.metavar)
+        return text if field.is_required else self._st(text, Styles.USAGE_OPT)
 
     def _option_entry(self, keys: Collection[str], style_: Style, metavar: str | None) -> str:
         """`-c, --count COUNT`, `    --color {a,b}` or `-h`, with long keys in one column."""

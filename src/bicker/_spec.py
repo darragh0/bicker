@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from collections import Counter
 from dataclasses import MISSING, dataclass
-from types import GenericAlias
+from types import GenericAlias, NoneType, UnionType
 from typing import (
     TYPE_CHECKING,
     Final,
@@ -45,6 +45,7 @@ LITERAL_TYPES: Final[Mapping[type, Style]] = {str: Styles.STR_VALUE, int: Styles
 class _Declaration:
     """What `pos()`, `opt()` and `flag()` return; the type isn't known until `collect_fields`."""
 
+    # MISSING for a required argument
     default: object
     short: str | None = None
     custom_long: str | None = None
@@ -58,7 +59,7 @@ class _Declaration:
 @dataclass(frozen=True, kw_only=True)
 class Field(_Declaration):
     name: str
-    # The annotation as written, e.g. `int`, `list[str]` or `Literal["a", "b"]`
+    # The type values are parsed as, e.g. `int` (for `int | None`), `list[str]` or `Literal["a"]`
     typ: object
 
     @property
@@ -91,12 +92,12 @@ class Field(_Declaration):
 
     @property
     def nargs_range(self) -> tuple[int, int | None]:
-        """`(min, max)` values for a list; defaults to 1+ for `pos()`, 0+ otherwise."""
+        """`(min, max)` values for a list; defaults to 1+ without a default, 0+ with one."""
         if isinstance(self.nargs, int):
             return (self.nargs, self.nargs)
         if self.nargs is not None:
             return self.nargs
-        return (1 if self.is_pos and self.default is MISSING else 0, None)
+        return (1 if self.default is MISSING else 0, None)
 
     @property
     def is_list(self) -> bool:
@@ -164,6 +165,17 @@ def pos(
     return _Declaration(default=default, is_pos=True, description=description, nargs=nargs)
 
 
+@overload
+def opt[T](
+    *,
+    required: Literal[True],
+    short: str | None = None,
+    long: str | None = None,
+    description: str | None = None,
+    metavar: str | None = None,
+    nargs: Nargs | None = None,
+) -> T: ...  # type: ignore[type-var]  # pyright: ignore[reportInvalidTypeVarUse]
+@overload
 def opt[T](
     default: T,
     *,
@@ -172,14 +184,35 @@ def opt[T](
     description: str | None = None,
     metavar: str | None = None,
     nargs: Nargs | None = None,
-) -> T:
+) -> T: ...
+@overload
+def opt[T](
+    *,
+    short: str | None = None,
+    long: str | None = None,
+    description: str | None = None,
+    metavar: str | None = None,
+    nargs: Nargs | None = None,
+) -> T | None: ...
+def opt(
+    default: object = None,
+    *,
+    required: bool = False,
+    short: str | None = None,
+    long: str | None = None,
+    description: str | None = None,
+    metavar: str | None = None,
+    nargs: Nargs | None = None,
+) -> object:
     """Declare an option that takes a value.
 
     Annotate the field as `list[T]` to make the option repeatable: each use adds one value.
 
     Args:
-        default: The value used when the option isn't given. For a `list[T]` option, given
-            values replace the default rather than extend it.
+        default: The value used when the option isn't given. Defaults to `None`, so annotate
+            the field as `T | None`. For a `list[T]` option, given values replace the
+            default rather than extend it.
+        required: Whether the option must be given. A required option has no default.
         short: A short key like `-c`: a dash plus one letter or digit.
         long: A long key like `--count`. Defaults to the field name, e.g. `--dry-run` for
             `dry_run`.
@@ -187,20 +220,19 @@ def opt[T](
         metavar: The value's placeholder in help. Defaults to `{a,b}` for a `Literal`, and
             the field name in uppercase otherwise.
         nargs: How many times a `list[T]` option can be given: exactly `n`, or `(min, max)`
-            with `None` for no max. Defaults to any number.
+            with `None` for no max. Defaults to any number, or at least 1 when `required`.
 
     Returns:
         A placeholder that `parse_args` replaces with the parsed value.
     """
-    decl = _Declaration(
-        default=default,
+    return _Declaration(
+        default=MISSING if required else default,
         short=short,
         custom_long=long,
         custom_metavar=metavar,
         description=description,
         nargs=nargs,
     )
-    return cast("T", decl)
 
 
 def flag(
@@ -237,7 +269,7 @@ def collect_fields(spec: type[object], reserved: Mapping[str, str]) -> list[Fiel
 
         field = Field(
             name=name,
-            typ=_expand_aliases(typ),
+            typ=_parsed_type(typ),
             default=decl.default,
             short=decl.short,
             custom_long=decl.custom_long,
@@ -255,6 +287,17 @@ def collect_fields(spec: type[object], reserved: Mapping[str, str]) -> list[Fiel
     _check_positional_order(fields)
 
     return fields
+
+
+def _parsed_type(typ: object) -> object:
+    """Get the type to parse values as: `T` for `T | None`, with `type X = ...` aliases expanded."""
+    typ = _expand_aliases(typ)
+    if get_origin(typ) is UnionType:
+        args: tuple[object, ...] = get_args(typ)
+        # Only `T | None` has one non-None member; `int | str` stays unsupported
+        if len(non_none := [arg for arg in args if arg is not NoneType]) == 1:
+            typ = _expand_aliases(non_none[0])
+    return typ
 
 
 def _expand_aliases(typ: object) -> object:

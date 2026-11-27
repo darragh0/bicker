@@ -10,6 +10,8 @@ All notable changes to this project are documented here. The format follows
 
 - `parse_args(..., version="1.2.0")` adds a `--version` option that prints the program name
   and version; `version_keys=` adds `-V`
+- Required options: `opt(required=True)`
+- Options without a default: `name: str | None = opt()` is `None` unless given
 
 ### Changed
 

@@ -77,6 +77,18 @@ def test_type_aliases_are_expanded() -> None:
     assert (args.mode, args.modes) == ("slow", ["fast"])
 
 
+class Unset:
+    name: str | None = opt()
+    mode: Mode | None = opt()
+    tags: list[str] | None = opt()
+
+
+def test_options_without_a_default_are_none() -> None:
+    assert vars(parse_args(Unset, [])) == {"name": None, "mode": None, "tags": None}
+    args = parse_args(Unset, ["--name", "bob", "--mode", "slow", "--tags", "a"])
+    assert (args.name, args.mode, args.tags) == ("bob", "slow", ["a"])
+
+
 class Points:
     point: list[int] = pos(nargs=2)
     name: str = pos()
@@ -109,7 +121,8 @@ class Counts:
         (Points, ["1"], "point expects exactly 2 values, got 1"),
         (Points, ["1", "2", "bob", "a", "b", "c"], 'unexpected positional: "c"'),
         (Aliased, ["--mode", "x"], '--mode must be one of: "fast", "slow"'),
-        (Counts, [], "--tags expects 1 to 3 values, got 0"),
+        (Counts, [], "missing required options: --tags, --names"),
+        (Counts, ["-ta", "-tb", "-tc", "-td"], "--tags expects 1 to 3 values, got 4"),
         (Counts, ["-t", "a", "--ids", "1", "--ids", "2"], "--ids expects at most 1 value, got 2"),
         (Counts, ["-t", "a", "--names", "x"], "--names expects at least 2 values, got 1"),
     ],

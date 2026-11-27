@@ -63,6 +63,8 @@ Output is colored in a terminal, unless `NO_COLOR` is set.
 | `pos()` | A required positional |
 | `pos(default)` | An optional positional (after the required ones) |
 | `opt(default, short="-c")` | An option: `--name VALUE`, plus an optional short key |
+| `opt()` | An option that's `None` unless given (annotate it `T \| None`) |
+| `opt(required=True)` | A required option |
 | `flag(short="-v")` | A `bool` option without a value, `False` unless given |
 
 Each takes an optional `description=` for help. Options and flags also take `long=` to
@@ -99,7 +101,6 @@ See its docstring for all of them.
 
 - Subcommands
 - Other value types (e.g. `Path`, `Enum`)
-- Required options
 - Short-only options
 - Custom colors
 

@@ -167,10 +167,16 @@ def _parse_options(
             option_values[field.name] = value
 
     for field in option_fields:
-        if field.is_list:
-            _check_count(field.long_key, field, len(repeated.get(field.name, [])))
+        if field.name in repeated:
+            _check_count(field.long_key, field, len(repeated[field.name]))
 
-    return option_values | repeated, raw_positionals
+    given = option_values | repeated
+    if missing := [f.long_key for f in option_fields if f.is_required and f.name not in given]:
+        noun = "option" if len(missing) == 1 else "options"
+        msg = f"missing required {noun}: {', '.join(style(key, Styles.OPT) for key in missing)}"
+        raise _ParseError(msg)
+
+    return given, raw_positionals
 
 
 def _getopt_error_message(e: GetoptError, fields_by_key: Mapping[str, Field]) -> str:

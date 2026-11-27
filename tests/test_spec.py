@@ -15,6 +15,10 @@ class Unsupported:
     x: dict[str, int] = opt({})
 
 
+class UnsupportedUnion:
+    x: int | str | None = opt()
+
+
 class BadShort:
     x: int = opt(1, short="x")
 
@@ -60,6 +64,7 @@ class InvalidNargs:
     [
         (NotDeclared, "must be declared with pos(), opt() or flag()"),
         (Unsupported, "has unsupported type"),
+        (UnsupportedUnion, "has unsupported type"),
         (BadShort, "has invalid short 'x'"),
         (BadLong, "has invalid long 'x'"),
         (DuplicateShort, "option keys used more than once: -a"),
