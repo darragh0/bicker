@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import MISSING, dataclass
-from typing import TYPE_CHECKING, Final, Literal, cast, final, overload
+from typing import TYPE_CHECKING, Final, Literal, TypedDict, Unpack, cast, final, overload
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -26,8 +26,25 @@ class Declaration:
     custom_metavar: str | None = None
     description: str | None = None
     nargs: Nargs | None = None
+    # `parse=` converts a single value, `each=` a list's items
+    parse: Callable[[str], object] | None = None
+    each: Callable[[str], object] | None = None
     # The help heading an option is listed under
     group: str = "Options"
+
+
+class _PosOptions(TypedDict, total=False):
+    description: str | None
+    nargs: Nargs | None
+
+
+class _OptOptions(TypedDict, total=False):
+    short: str | None
+    long: str | Literal[False] | None
+    description: str | None
+    metavar: str | None
+    nargs: Nargs | None
+    group: str
 
 
 @final
@@ -47,16 +64,29 @@ class CommandNames:
 COMMAND_NAMES_ATTR: Final = "__bicker_command__"
 
 
-# T only in the return type is intentional: it's inferred from the field's annotation
+# Overloads tie `T` to the field's annotation: from `parse=`, `each=` or the default, else
+# inferred (T only in the return type is intentional). Shared keywords come from a TypedDict.
 @overload
-def pos[T](*, description: str | None = None, nargs: Nargs | None = None) -> T: ...  # type: ignore[type-var]  # pyright: ignore[reportInvalidTypeVarUse]
+def pos[T](**options: Unpack[_PosOptions]) -> T: ...  # type: ignore[type-var]  # pyright: ignore[reportInvalidTypeVarUse]
 @overload
-def pos[T](default: T, *, description: str | None = None, nargs: Nargs | None = None) -> T: ...
+def pos[T](default: T, **options: Unpack[_PosOptions]) -> T: ...
+@overload
+def pos[T](*, parse: Callable[[str], T], **options: Unpack[_PosOptions]) -> T: ...
+@overload
+def pos[T](default: T, *, parse: Callable[[str], T], **options: Unpack[_PosOptions]) -> T: ...
+@overload
+def pos[V](*, each: Callable[[str], V], **options: Unpack[_PosOptions]) -> list[V]: ...
+@overload
+def pos[V](
+    default: list[V], *, each: Callable[[str], V], **options: Unpack[_PosOptions]
+) -> list[V]: ...
 def pos(
     default: object = MISSING,
     *,
     description: str | None = None,
     nargs: Nargs | None = None,
+    parse: Callable[[str], object] | None = None,
+    each: Callable[[str], object] | None = None,
 ) -> object:
     """Declare a positional argument.
 
@@ -70,45 +100,47 @@ def pos(
         description: The help text for this positional.
         nargs: How many values a `list[T]` positional takes: exactly `n`, or `(min, max)` with
             `None` for no max. Defaults to at least 1, or at least 0 when `default` is given.
+        parse: Turns the value's text into the field's type, for a type bicker doesn't support
+            itself, e.g. `date.fromisoformat`. It should raise `ValueError` for an invalid value.
+        each: Like `parse`, but for a `list[T]` field: turns each item's text into a `T`.
 
     Returns:
         A placeholder that `parse_args` replaces with the parsed value.
     """
-    return Declaration(default=default, is_pos=True, description=description, nargs=nargs)
+    return Declaration(
+        default=default,
+        is_pos=True,
+        description=description,
+        nargs=nargs,
+        parse=parse,
+        each=each,
+    )
 
 
 @overload
-def opt[T](
-    *,
-    required: Literal[True],
-    short: str | None = None,
-    long: str | Literal[False] | None = None,
-    description: str | None = None,
-    metavar: str | None = None,
-    nargs: Nargs | None = None,
-    group: str = "Options",
-) -> T: ...  # type: ignore[type-var]  # pyright: ignore[reportInvalidTypeVarUse]
+def opt[T](*, required: Literal[True], **options: Unpack[_OptOptions]) -> T: ...  # type: ignore[type-var]  # pyright: ignore[reportInvalidTypeVarUse]
+@overload
+def opt[T](default: T, **options: Unpack[_OptOptions]) -> T: ...
+@overload
+def opt[T](**options: Unpack[_OptOptions]) -> T | None: ...
 @overload
 def opt[T](
-    default: T,
-    *,
-    short: str | None = None,
-    long: str | Literal[False] | None = None,
-    description: str | None = None,
-    metavar: str | None = None,
-    nargs: Nargs | None = None,
-    group: str = "Options",
+    *, required: Literal[True], parse: Callable[[str], T], **options: Unpack[_OptOptions]
 ) -> T: ...
 @overload
-def opt[T](
-    *,
-    short: str | None = None,
-    long: str | Literal[False] | None = None,
-    description: str | None = None,
-    metavar: str | None = None,
-    nargs: Nargs | None = None,
-    group: str = "Options",
-) -> T | None: ...
+def opt[T](default: T, *, parse: Callable[[str], T], **options: Unpack[_OptOptions]) -> T: ...
+@overload
+def opt[T](*, parse: Callable[[str], T], **options: Unpack[_OptOptions]) -> T | None: ...
+@overload
+def opt[V](
+    *, required: Literal[True], each: Callable[[str], V], **options: Unpack[_OptOptions]
+) -> list[V]: ...
+@overload
+def opt[V](
+    default: list[V], *, each: Callable[[str], V], **options: Unpack[_OptOptions]
+) -> list[V]: ...
+@overload
+def opt[V](*, each: Callable[[str], V], **options: Unpack[_OptOptions]) -> list[V] | None: ...
 def opt(
     default: object = None,
     *,
@@ -119,6 +151,8 @@ def opt(
     metavar: str | None = None,
     nargs: Nargs | None = None,
     group: str = "Options",
+    parse: Callable[[str], object] | None = None,
+    each: Callable[[str], object] | None = None,
 ) -> object:
     """Declare an option that takes a value.
 
@@ -138,6 +172,9 @@ def opt(
         nargs: How many times a `list[T]` option can be given: exactly `n`, or `(min, max)`
             with `None` for no max. Defaults to any number, or at least 1 when `required`.
         group: The help heading to list this option under.
+        parse: Turns the value's text into the field's type, for a type bicker doesn't support
+            itself, e.g. `date.fromisoformat`. It should raise `ValueError` for an invalid value.
+        each: Like `parse`, but for a `list[T]` field: turns each item's text into a `T`.
 
     Returns:
         A placeholder that `parse_args` replaces with the parsed value.
@@ -149,6 +186,8 @@ def opt(
         custom_metavar=metavar,
         description=description,
         nargs=nargs,
+        parse=parse,
+        each=each,
         group=group,
     )
 

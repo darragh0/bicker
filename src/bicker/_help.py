@@ -4,7 +4,8 @@ import shutil
 from dataclasses import MISSING, dataclass
 from typing import TYPE_CHECKING, Final, Literal, TextIO, cast, final
 
-from bicker._style import Style, Styles, style, visible_len
+from bicker._spec import as_text
+from bicker._style import Style, Styles, style, value_style, visible_len
 
 if TYPE_CHECKING:
     from collections.abc import Collection, Iterable, Sequence
@@ -189,10 +190,7 @@ class HelpRenderer:
         values = cast("list[object]", default) if field.is_list else [default]
         if not values:
             return None
-        shown = ", ".join(
-            self._st(str(value), Styles.STR_VALUE if isinstance(value, str) else Styles.INT_VALUE)
-            for value in values
-        )
+        shown = ", ".join(self._st(as_text(value), value_style(value)) for value in values)
         return self._st(f"[default: {shown}]", Styles.DEFAULT)
 
     def _option_entry(self, keys: Collection[str], style_: Style, metavar: str | None) -> str:

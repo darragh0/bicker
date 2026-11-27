@@ -6,6 +6,12 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `Path` and `Enum` fields; enum members are given by name in kebab-case
+- Converters for any other type on `pos()` and `opt()`: `parse=` for one value, `each=` for a list's
+  items, e.g. `parse=date.fromisoformat`
+
 ## [2.1.0] - 2026-11-27
 
 ### Added

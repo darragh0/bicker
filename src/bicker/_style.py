@@ -48,6 +48,11 @@ def style(text: str, style_: Style, stream: TextIO | None = None) -> str:
     return start + fmted.replace(_RESET, _RESET + start) + _RESET
 
 
+def value_style(value: object) -> Style:
+    """Style a value like the user would see it: numbers in blue, anything else quoted in green."""
+    return Styles.INT_VALUE if type(value) in (int, float) else Styles.STR_VALUE
+
+
 def visible_len(text: str) -> int:
     """Length as rendered in a terminal, ignoring color codes."""
     return len(_ANSI_CODE.sub("", text))

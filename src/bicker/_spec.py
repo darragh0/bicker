@@ -3,7 +3,9 @@ from __future__ import annotations
 import re
 from collections import Counter
 from dataclasses import MISSING, dataclass
+from enum import Enum
 from inspect import cleandoc
+from pathlib import Path
 from types import GenericAlias, NoneType, UnionType
 from typing import (
     TYPE_CHECKING,
@@ -21,7 +23,7 @@ from bicker._declare import COMMAND_NAMES_ATTR, CommandDeclaration, CommandNames
 from bicker._style import Styles
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping, Sequence
+    from collections.abc import Callable, Mapping, Sequence
 
     from bicker._style import Style
 
@@ -35,11 +37,8 @@ _COMMAND_NAME: Final = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]*")
 # `http-get`
 _WORD_BOUNDARY: Final = re.compile(r"(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])")
 
-# Supported value types; bool is supported separately, for flags only
-_SCALAR_TYPES: Final = (str, int, float)
-
-# Literal can't hold floats (PEP 586); each type maps to how its choices are styled
-LITERAL_TYPES: Final[Mapping[type, Style]] = {str: Styles.STR_VALUE, int: Styles.INT_VALUE}
+# Types built from a value's text, e.g. `int("3")`; bool is supported separately, for flags only
+_SCALAR_TYPES: Final = (str, int, float, Path)
 
 
 # Compared by identity (eq=False), so fields can be dict keys even with a list default
@@ -109,15 +108,24 @@ class Field:
         return args[0]
 
     @property
-    def scalar_typ(self) -> type[str | int | float] | None:
-        """The value type if it's `str`, `int` or `float`, else `None` (e.g. for a `Literal`)."""
+    def converter(self) -> Callable[[str], object] | None:
+        """What turns a value's text into its type: `parse=`/`each=`, or a type like `int`."""
+        if custom := self.decl.parse or self.decl.each:
+            return custom
         typ = self.value_typ
         return typ if isinstance(typ, type) and typ in _SCALAR_TYPES else None
 
     @property
-    def choices(self) -> tuple[object, ...]:
-        """The values of a `Literal` type, or `()` for any other type."""
-        return get_args(self.value_typ) if get_origin(self.value_typ) is Literal else ()
+    def choices(self) -> dict[str, object]:
+        """The values of a `Literal` or `Enum` type, by their text; empty for any other type."""
+        typ = self.value_typ
+        if get_origin(typ) is Literal:
+            values: tuple[object, ...] = get_args(typ)
+        elif isinstance(typ, type) and issubclass(typ, Enum):
+            values = tuple(typ)
+        else:
+            return {}
+        return {as_text(value): value for value in values}
 
     @property
     def metavar(self) -> str | None:
@@ -127,7 +135,7 @@ class Field:
         if self.decl.custom_metavar:
             return self.decl.custom_metavar
         if self.choices:
-            return "{" + ",".join(map(str, self.choices)) + "}"
+            return "{" + ",".join(self.choices) + "}"
         return self.name.upper()
 
 
@@ -238,6 +246,7 @@ def _command_names(cls: type[object]) -> tuple[str, tuple[str, ...]]:
 def _field(name: str, typ: object, decl: Declaration) -> Field:
     field = Field(name=name, typ=_parsed_type(typ), decl=decl)
     _check_type(field)
+    _check_converter(field)
     _check_nargs(field)
     return field
 
@@ -276,22 +285,40 @@ def _expand_aliases(typ: object) -> object:
     return typ
 
 
+def as_text(value: object) -> str:
+    """Write a value as it's typed: an enum member's name in kebab-case, else `str(value)`."""
+    return value.name.lower().replace("_", "-") if isinstance(value, Enum) else str(value)
+
+
 def _check_type(field: Field) -> None:
+    # Literal can't hold floats (PEP 586), and choices are typed as text
+    choices = field.choices.values()
     supported = (
-        field.scalar_typ is not None
+        field.converter is not None
         or (field.is_flag and not field.decl.is_pos)
-        or (field.choices and all(type(choice) in LITERAL_TYPES for choice in field.choices))
+        or (bool(choices) and all(isinstance(value, str | int | Enum) for value in choices))
     )
 
     if not supported:
         scalars = ", ".join(t.__name__ for t in _SCALAR_TYPES)
-        literals = "/".join(t.__name__ for t in LITERAL_TYPES)
         msg = (
-            f"{field.name!r} has unsupported type {field.typ!r} "
-            f"(supported: {scalars}, Literal of {literals}, a list of those, "
-            "and bool for flags)"
+            f"{field.name!r} has unsupported type {field.typ!r} (supported: {scalars}, Enum, "
+            "Literal of str/int, a list of those, and bool for flags; use parse= for others)"
         )
         raise TypeError(msg)
+
+
+def _check_converter(field: Field) -> None:
+    """Check `parse=`/`each=` fit the field; type checkers catch most misuse, but not all."""
+    if field.decl.parse and field.is_list:
+        msg = f"{field.name!r} is a list, so convert its items with each= instead of parse="
+    elif field.decl.each and not field.is_list:
+        msg = f"{field.name!r} isn't a list, so convert it with parse= instead of each="
+    elif (field.decl.parse or field.decl.each) and get_origin(field.value_typ) is Literal:
+        msg = f"{field.name!r} is a Literal, so its values are matched as typed (no parse=/each=)"
+    else:
+        return
+    raise TypeError(msg)
 
 
 def _check_nargs(field: Field) -> None:

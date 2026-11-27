@@ -8,8 +8,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING, cast, final
 
 from bicker._help import HelpConfig, HelpRenderer
-from bicker._spec import LITERAL_TYPES, collect_spec
-from bicker._style import Style, Styles, style
+from bicker._spec import collect_spec
+from bicker._style import Style, Styles, style, value_style
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
@@ -243,31 +243,33 @@ def _key_style(key: str, fields_by_key: Mapping[str, Field]) -> Style:
 
 
 def _convert(label: str, field: Field, raw: str) -> object:
-    # A field that takes values is either a scalar or a `Literal` (see `_check_type`)
-    typ = field.scalar_typ
-    if typ is None:
+    convert = field.converter
+    if convert is None:  # A `Literal` or `Enum` (see `_check_type`)
         return _convert_choice(label, field, raw)
 
+    typ = field.value_typ
     try:
-        return typ(raw)
+        value = convert(raw)
     except ValueError:
-        msg = (
-            f"{style(label, field.style)} expects {style(typ.__name__, Styles.TYPE)}, "
-            f"got {style(raw, Styles.STR_VALUE)}"
-        )
+        expected = style(typ.__name__ if isinstance(typ, type) else "a valid value", Styles.TYPE)
+        msg = f"{style(label, field.style)} expects {expected}, got {style(raw, Styles.STR_VALUE)}"
         raise _ParseError(msg) from None
+
+    # A backstop for what type checkers miss (e.g. mypy with a default), so a converter's wrong
+    # type is never handed back
+    if isinstance(typ, type) and not isinstance(value, typ):
+        msg = f"{field.name!r} is {typ.__name__}, but its converter returned {type(value).__name__}"
+        raise TypeError(msg)
+    return value
 
 
 def _convert_choice(label: str, field: Field, raw: str) -> object:
-    choices_by_raw = {str(choice): choice for choice in field.choices}
-    if raw not in choices_by_raw:
-        listed = ", ".join(
-            style(raw_choice, LITERAL_TYPES[type(choice)])
-            for raw_choice, choice in choices_by_raw.items()
-        )
+    choices = field.choices
+    if raw not in choices:
+        listed = ", ".join(style(text, value_style(value)) for text, value in choices.items())
         msg = f"{style(label, field.style)} must be one of: {listed}"
         raise _ParseError(msg)
-    return choices_by_raw[raw]
+    return choices[raw]
 
 
 def _parse_positionals(spec: Spec, raw_positionals: Sequence[str]) -> dict[Field, object]:

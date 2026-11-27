@@ -77,8 +77,15 @@ Each also takes:
 - `metavar=` (options): its value's placeholder in help
 - `group=` (options and flags): the help heading it's listed under, `Options` by default
 
-**Types:** `str`, `int`, `float`, or a `Literal` of string/int values. Annotate a field as `list[...]` of any of these
-to take several values:
+**Types:**
+
+- `str`, `int`, `float` and `Path`
+- An `Enum`, given by member name in kebab-case (`Color.DARK_BLUE` is `dark-blue`)
+- A `Literal` of string/int values
+- Anything else with a converter: `parse=` for one value, `each=` for a list's items, e.g.
+  `when: date | None = opt(parse=date.fromisoformat)`
+
+Annotate a field as `list[...]` of any of these to take several values:
 
 ```python
 class Args:
@@ -148,7 +155,6 @@ and other settings like `prog=` and `help_keys=`. See docstring for more.
 
 ## Not supported (yet)
 
-- Other value types (e.g. `Path`, `Enum`)
 - Custom colors
 
 Feature requests are welcome: [open an issue](https://github.com/darragh0/bicker/issues).
