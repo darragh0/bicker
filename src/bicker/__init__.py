@@ -21,8 +21,9 @@ Example:
 
 from typing import Final
 
+from bicker._declare import Nargs, cmd, command, flag, opt, pos
+from bicker._help import HelpKey, VersionKey
 from bicker._parse import parse_args
-from bicker._spec import HelpKey, Nargs, VersionKey, cmd, command, flag, opt, pos
 
 __all__: Final = [
     "HelpKey",

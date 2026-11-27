@@ -15,22 +15,16 @@ from typing import (
     get_args,
     get_origin,
     get_type_hints,
-    overload,
 )
 
+from bicker._declare import COMMAND_NAMES_ATTR, CommandDeclaration, CommandNames, Declaration
 from bicker._style import Styles
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Mapping, Sequence
+    from collections.abc import Mapping, Sequence
 
     from bicker._style import Style
 
-
-type HelpKey = Literal["-h", "--help"]
-type VersionKey = Literal["-V", "--version"]
-
-# How many values a list field takes: exactly `n`, or `(min, max)` with `None` for no max
-type Nargs = int | tuple[int, int | None]
 
 _SHORT_KEY: Final = re.compile(r"-[A-Za-z0-9]")
 _LONG_KEY: Final = re.compile(r"--[A-Za-z0-9][A-Za-z0-9-]*")
@@ -49,41 +43,27 @@ LITERAL_TYPES: Final[Mapping[type, Style]] = {str: Styles.STR_VALUE, int: Styles
 
 
 # Compared by identity (eq=False), so fields can be dict keys even with a list default
-@dataclass(frozen=True, kw_only=True, eq=False)
-class _Declaration:
-    """What `pos()`, `opt()` and `flag()` return; the type isn't known until `collect_fields`."""
-
-    # MISSING for a required argument
-    default: object
-    short: str | None = None
-    # False for a short-only option
-    custom_long: str | Literal[False] | None = None
-    is_pos: bool = False
-    custom_metavar: str | None = None
-    description: str | None = None
-    nargs: Nargs | None = None
-    # The help heading an option is listed under
-    group: str = "Options"
-
-
 @final
 @dataclass(frozen=True, kw_only=True, eq=False)
-class Field(_Declaration):
+class Field:
+    """A declared argument, with its name and type from the class."""
+
     name: str
     # The type values are parsed as, e.g. `int` (for `int | None`), `list[str]` or `Literal["a"]`
     typ: object
+    decl: Declaration
 
     @property
     def long_key(self) -> str | None:
         """The custom long key if set, else derived from the name: `dry_run` -> `--dry-run`."""
-        if self.custom_long is False:
+        if self.decl.custom_long is False:
             return None
-        return self.custom_long or f"--{self.name.replace('_', '-')}"
+        return self.decl.custom_long or f"--{self.name.replace('_', '-')}"
 
     @property
     def keys(self) -> tuple[str, ...]:
         """An option's keys, short first, e.g. `("-c", "--count")`."""
-        return tuple(key for key in (self.short, self.long_key) if key)
+        return tuple(key for key in (self.decl.short, self.long_key) if key)
 
     @property
     def label(self) -> str:
@@ -94,7 +74,7 @@ class Field(_Declaration):
     def style(self) -> Style:
         if self.is_flag:
             return Styles.FLAG
-        return Styles.POS if self.is_pos else Styles.OPT
+        return Styles.POS if self.decl.is_pos else Styles.OPT
 
     @property
     def is_flag(self) -> bool:
@@ -104,16 +84,16 @@ class Field(_Declaration):
     def is_required(self) -> bool:
         if self.is_list:
             return self.nargs_range[0] > 0
-        return self.default is MISSING
+        return self.decl.default is MISSING
 
     @property
     def nargs_range(self) -> tuple[int, int | None]:
         """`(min, max)` values for a list; defaults to 1+ without a default, 0+ with one."""
-        if isinstance(self.nargs, int):
-            return (self.nargs, self.nargs)
-        if self.nargs is not None:
-            return self.nargs
-        return (1 if self.default is MISSING else 0, None)
+        if isinstance(self.decl.nargs, int):
+            return (self.decl.nargs, self.decl.nargs)
+        if self.decl.nargs is not None:
+            return self.decl.nargs
+        return (1 if self.decl.default is MISSING else 0, None)
 
     @property
     def is_list(self) -> bool:
@@ -144,8 +124,8 @@ class Field(_Declaration):
         """The help placeholder: the custom one if set, else `{a,b}` for choices or `NAME`."""
         if self.is_flag:
             return None
-        if self.custom_metavar:
-            return self.custom_metavar
+        if self.decl.custom_metavar:
+            return self.decl.custom_metavar
         if self.choices:
             return "{" + ",".join(map(str, self.choices)) + "}"
         return self.name.upper()
@@ -178,194 +158,6 @@ class Spec:
         return cleandoc(self.cls.__doc__) if self.cls.__doc__ else None
 
 
-@final
-class _CommandDeclaration:
-    """What `cmd()` returns; the commands are read from the field's annotation."""
-
-
-@final
-@dataclass(frozen=True)
-class _CommandNames:
-    """What `@command` stores on a class."""
-
-    name: str | None
-    aliases: tuple[str, ...]
-
-
-_COMMAND_NAMES_ATTR: Final = "__bicker_command__"
-
-
-# T only in the return type is intentional: it's inferred from the field's annotation
-@overload
-def pos[T](*, description: str | None = None, nargs: Nargs | None = None) -> T: ...  # type: ignore[type-var]  # pyright: ignore[reportInvalidTypeVarUse]
-@overload
-def pos[T](default: T, *, description: str | None = None, nargs: Nargs | None = None) -> T: ...
-def pos(
-    default: object = MISSING,
-    *,
-    description: str | None = None,
-    nargs: Nargs | None = None,
-) -> object:
-    """Declare a positional argument.
-
-    Positionals are matched in the order they're declared. Positionals with a `default` are
-    optional and must come after required ones. Annotate the field as `list[T]` to take several
-    values; unless `nargs` fixes the count, it must be the last positional.
-
-    Args:
-        default: The value used when the positional isn't given. Omit it to make the
-            positional required.
-        description: The help text for this positional.
-        nargs: How many values a `list[T]` positional takes: exactly `n`, or `(min, max)` with
-            `None` for no max. Defaults to at least 1, or at least 0 when `default` is given.
-
-    Returns:
-        A placeholder that `parse_args` replaces with the parsed value.
-    """
-    return _Declaration(default=default, is_pos=True, description=description, nargs=nargs)
-
-
-@overload
-def opt[T](
-    *,
-    required: Literal[True],
-    short: str | None = None,
-    long: str | Literal[False] | None = None,
-    description: str | None = None,
-    metavar: str | None = None,
-    nargs: Nargs | None = None,
-    group: str = "Options",
-) -> T: ...  # type: ignore[type-var]  # pyright: ignore[reportInvalidTypeVarUse]
-@overload
-def opt[T](
-    default: T,
-    *,
-    short: str | None = None,
-    long: str | Literal[False] | None = None,
-    description: str | None = None,
-    metavar: str | None = None,
-    nargs: Nargs | None = None,
-    group: str = "Options",
-) -> T: ...
-@overload
-def opt[T](
-    *,
-    short: str | None = None,
-    long: str | Literal[False] | None = None,
-    description: str | None = None,
-    metavar: str | None = None,
-    nargs: Nargs | None = None,
-    group: str = "Options",
-) -> T | None: ...
-def opt(
-    default: object = None,
-    *,
-    required: bool = False,
-    short: str | None = None,
-    long: str | Literal[False] | None = None,
-    description: str | None = None,
-    metavar: str | None = None,
-    nargs: Nargs | None = None,
-    group: str = "Options",
-) -> object:
-    """Declare an option that takes a value.
-
-    Annotate the field as `list[T]` to make the option repeatable: each use adds one value.
-
-    Args:
-        default: The value used when the option isn't given. Defaults to `None`, so annotate
-            the field as `T | None`. For a `list[T]` option, given values replace the
-            default rather than extend it.
-        required: Whether the option must be given. A required option has no default.
-        short: A short key like `-c`: a dash plus one letter or digit.
-        long: A long key like `--count`. Defaults to the field name, e.g. `--dry-run` for
-            `dry_run`. Pass `False` for a short-only option.
-        description: The help text for this option.
-        metavar: The value's placeholder in help. Defaults to `{a,b}` for a `Literal`, and
-            the field name in uppercase otherwise.
-        nargs: How many times a `list[T]` option can be given: exactly `n`, or `(min, max)`
-            with `None` for no max. Defaults to any number, or at least 1 when `required`.
-        group: The help heading to list this option under.
-
-    Returns:
-        A placeholder that `parse_args` replaces with the parsed value.
-    """
-    return _Declaration(
-        default=MISSING if required else default,
-        short=short,
-        custom_long=long,
-        custom_metavar=metavar,
-        description=description,
-        nargs=nargs,
-        group=group,
-    )
-
-
-def flag(
-    *,
-    short: str | None = None,
-    long: str | Literal[False] | None = None,
-    description: str | None = None,
-    group: str = "Options",
-) -> bool:
-    """Declare a flag: a `bool` option without a value. Defaults to `False` unless flag is given.
-
-    Args:
-        short: A short key like `-v`: a dash plus one letter or digit.
-        long: A long key like `--verbose`. Defaults to the field name, e.g. `--dry-run` for
-            `dry_run`. Pass `False` for a short-only flag.
-        description: The help text for this flag.
-        group: The help heading to list this flag under.
-
-    Returns:
-        A placeholder that `parse_args` replaces with the parsed value.
-    """
-    return opt(default=False, short=short, long=long, description=description, group=group)
-
-
-def cmd[T]() -> T:  # type: ignore[type-var]  # pyright: ignore[reportInvalidTypeVarUse]
-    """Declare the command, annotated with one class per command, e.g. `command: Build | Test`.
-
-    Each class declares its command's arguments, like the class passed to `parse_args`, and
-    its docstring is the command's help text. A command's name is its class name in kebab-case,
-    e.g. `run-tests` for `RunTests`, unless set with `@command`. Options declared next to
-    `cmd()` can be given before or after the command. A class with a command can't have
-    positionals. Add `| None` to the annotation to make the command optional.
-
-    Returns:
-        A placeholder that `parse_args` replaces with an instance of the given command's class.
-    """
-    return cast("T", _CommandDeclaration())
-
-
-def command[C: type[object]](
-    name: str | None = None,
-    *,
-    aliases: list[str] | tuple[str, ...] = (),
-) -> Callable[[C], C]:
-    """Set a command class's name and aliases, as a class decorator.
-
-    Args:
-        name: The command's name. Defaults to the class name in kebab-case.
-        aliases: Other names the command can be given as, e.g. `("l",)`.
-
-    Returns:
-        A decorator that returns the class unchanged, apart from its command names.
-
-    Example:
-        ```python
-        @command("ls", aliases=("l",))
-        class ListFiles: ...
-        ```
-    """
-
-    def decorate(cls: C) -> C:
-        setattr(cls, _COMMAND_NAMES_ATTR, _CommandNames(name, tuple(aliases)))
-        return cls
-
-    return decorate
-
-
 def collect_spec(
     cls: type[object],
     reserved: Mapping[str, str],
@@ -383,9 +175,9 @@ def collect_spec(
 
     for name, typ in hints.items():
         decl = getattr(cls, name, None)
-        if isinstance(decl, _Declaration):
+        if isinstance(decl, Declaration):
             fields.append(_field(name, typ, decl))
-        elif not isinstance(decl, _CommandDeclaration):
+        elif not isinstance(decl, CommandDeclaration):
             msg = f"{name!r} must be declared with pos(), opt(), flag() or cmd()"
             raise TypeError(msg)
         elif command_attr:
@@ -395,8 +187,8 @@ def collect_spec(
             command_attr = name
             command_classes, command_required = _command_classes(name, typ)
 
-    options = tuple(field for field in fields if not field.is_pos)
-    positionals = tuple(field for field in fields if field.is_pos)
+    options = tuple(field for field in fields if not field.decl.is_pos)
+    positionals = tuple(field for field in fields if field.decl.is_pos)
     _check_keys([*inherited, *options])
     _check_reserved(options, reserved)
     _check_positional_order(positionals)
@@ -432,8 +224,8 @@ def _command_names(cls: type[object]) -> tuple[str, tuple[str, ...]]:
     """Get a command class's name and aliases: from `@command`, else its kebab-case name."""
     default = _WORD_BOUNDARY.sub("-", cls.__name__).lower()
     # Read from the class itself, so a subclass doesn't inherit its base's names
-    names: object = cls.__dict__.get(_COMMAND_NAMES_ATTR)
-    if not isinstance(names, _CommandNames):
+    names: object = cls.__dict__.get(COMMAND_NAMES_ATTR)
+    if not isinstance(names, CommandNames):
         return default, ()
 
     for word in (names.name, *names.aliases):
@@ -443,19 +235,8 @@ def _command_names(cls: type[object]) -> tuple[str, tuple[str, ...]]:
     return names.name or default, names.aliases
 
 
-def _field(name: str, typ: object, decl: _Declaration) -> Field:
-    field = Field(
-        name=name,
-        typ=_parsed_type(typ),
-        default=decl.default,
-        short=decl.short,
-        custom_long=decl.custom_long,
-        is_pos=decl.is_pos,
-        custom_metavar=decl.custom_metavar,
-        description=decl.description,
-        nargs=decl.nargs,
-        group=decl.group,
-    )
+def _field(name: str, typ: object, decl: Declaration) -> Field:
+    field = Field(name=name, typ=_parsed_type(typ), decl=decl)
     _check_type(field)
     _check_nargs(field)
     return field
@@ -498,7 +279,7 @@ def _expand_aliases(typ: object) -> object:
 def _check_type(field: Field) -> None:
     supported = (
         field.scalar_typ is not None
-        or (field.is_flag and not field.is_pos)
+        or (field.is_flag and not field.decl.is_pos)
         or (field.choices and all(type(choice) in LITERAL_TYPES for choice in field.choices))
     )
 
@@ -514,7 +295,7 @@ def _check_type(field: Field) -> None:
 
 
 def _check_nargs(field: Field) -> None:
-    if field.nargs is None:
+    if field.decl.nargs is None:
         return
     if not field.is_list:
         msg = f"{field.name!r} has nargs but isn't a list"
@@ -522,21 +303,23 @@ def _check_nargs(field: Field) -> None:
 
     low, high = field.nargs_range
     if low < 0 or (high is not None and high < max(low, 1)):
-        msg = f"{field.name!r} has invalid nargs {field.nargs!r}"
+        msg = f"{field.name!r} has invalid nargs {field.decl.nargs!r}"
         raise TypeError(msg)
 
 
 def _check_keys(fields: Sequence[Field]) -> None:
     for field in fields:
-        if field.short is not None and not _SHORT_KEY.fullmatch(field.short):
+        if field.decl.short is not None and not _SHORT_KEY.fullmatch(field.decl.short):
             msg = (
-                f"{field.name!r} has invalid short {field.short!r} "
+                f"{field.name!r} has invalid short {field.decl.short!r} "
                 "(expected '-' plus one letter or digit)"
             )
             raise TypeError(msg)
-        if isinstance(field.custom_long, str) and not _LONG_KEY.fullmatch(field.custom_long):
+        if isinstance(field.decl.custom_long, str) and not _LONG_KEY.fullmatch(
+            field.decl.custom_long
+        ):
             msg = (
-                f"{field.name!r} has invalid long {field.custom_long!r} "
+                f"{field.name!r} has invalid long {field.decl.custom_long!r} "
                 "(expected '--' plus letters, digits or '-')"
             )
             raise TypeError(msg)
@@ -563,7 +346,7 @@ def _check_reserved(fields: Sequence[Field], reserved: Mapping[str, str]) -> Non
 
 def _check_positional_order(fields: Sequence[Field]) -> None:
     # False (required) sorts before True (optional)
-    is_optional = [not field.is_required for field in fields if field.is_pos]
+    is_optional = [not field.is_required for field in fields if field.decl.is_pos]
 
     if is_optional != sorted(is_optional):
         msg = "required positionals must precede optional ones"
@@ -571,7 +354,7 @@ def _check_positional_order(fields: Sequence[Field]) -> None:
 
     # A variable-count list takes the remaining values, so nothing can follow it;
     # a fixed-count list (nargs=N) can go anywhere
-    pos_fields = [field for field in fields if field.is_pos]
+    pos_fields = [field for field in fields if field.decl.is_pos]
     if any(field.is_list and len(set(field.nargs_range)) > 1 for field in pos_fields[:-1]):
         msg = "only the last positional can take a variable number of values (use nargs=N)"
         raise TypeError(msg)

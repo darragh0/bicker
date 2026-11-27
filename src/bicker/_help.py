@@ -2,14 +2,17 @@ from __future__ import annotations
 
 import shutil
 from dataclasses import MISSING, dataclass
-from typing import TYPE_CHECKING, Final, TextIO, cast, final
+from typing import TYPE_CHECKING, Final, Literal, TextIO, cast, final
 
 from bicker._style import Style, Styles, style, visible_len
 
 if TYPE_CHECKING:
     from collections.abc import Collection, Iterable, Sequence
 
-    from bicker._spec import Field, HelpKey, Spec, VersionKey
+    from bicker._spec import Field, Spec
+
+type HelpKey = Literal["-h", "--help"]
+type VersionKey = Literal["-V", "--version"]
 
 _PAD: Final = "  "
 
@@ -74,7 +77,7 @@ class HelpRenderer:
         # Ungrouped options first, then each group in the order it first appears
         groups: dict[str, list[_Entry]] = {"Options": []}
         for field in self._options:
-            groups.setdefault(field.group, []).append(self._field_entry(field))
+            groups.setdefault(field.decl.group, []).append(self._field_entry(field))
 
         if cfg.help_keys:
             help_entry = self._option_entry(cfg.help_keys, Styles.FLAG, None)
@@ -175,11 +178,11 @@ class HelpRenderer:
     def _field_words(self, field: Field) -> list[str]:
         """Split the description into words, then add `[default: ...]` if it's shown."""
         note = self._default_note(field) if self._cfg.show_defaults else None
-        return [*_words(field.description), *([note] if note else [])]
+        return [*_words(field.decl.description), *([note] if note else [])]
 
     def _default_note(self, field: Field) -> str | None:
         """`[default: 800]`, or `None` for a default not worth showing: none, `False` or empty."""
-        default = field.default
+        default = field.decl.default
         if default is MISSING or default is None or field.is_flag:
             return None
 

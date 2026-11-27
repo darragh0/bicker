@@ -14,7 +14,8 @@ from bicker._style import Style, Styles, style
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
-    from bicker._spec import Field, HelpKey, Spec, VersionKey
+    from bicker._help import HelpKey, VersionKey
+    from bicker._spec import Field, Spec
 
 
 def parse_args[T](
@@ -169,7 +170,7 @@ def _default(field: Field) -> object:
 
     A list without a default (a positional or required option allowed none) starts empty.
     """
-    return [] if field.is_list and field.default is MISSING else copy(field.default)
+    return [] if field.is_list and field.decl.default is MISSING else copy(field.decl.default)
 
 
 def _getopt_spec(fields_by_key: Mapping[str, Field]) -> tuple[str, list[str]]:
