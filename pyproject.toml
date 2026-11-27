@@ -1,28 +1,35 @@
 [project]
 name = "bicker"
-version = "1.0.0"
+version = "2.0.0"
 description = "Tiny, fully typed CLI argument parser: declare args as a class"
 readme = "README.md"
 authors = [
-    { name = "darragh0", email = "156817523+darragh0@users.noreply.github.com" }
+  { name = "darragh0", email = "156817523+darragh0@users.noreply.github.com" },
 ]
 requires-python = ">=3.12"
 dependencies = []
 license = "MIT"
 license-files = ["LICENSE"]
-keywords = ["cli", "command-line", "arguments", "argument-parser", "argparse", "typed"]
+keywords = [
+  "cli",
+  "command-line",
+  "arguments",
+  "argument-parser",
+  "argparse",
+  "typed",
+]
 classifiers = [
-    "Development Status :: 5 - Production/Stable",
-    "Environment :: Console",
-    "Intended Audience :: Developers",
-    "Operating System :: OS Independent",
-    "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3 :: Only",
-    "Programming Language :: Python :: 3.12",
-    "Programming Language :: Python :: 3.13",
-    "Programming Language :: Python :: 3.14",
-    "Topic :: Software Development :: Libraries :: Python Modules",
-    "Typing :: Typed",
+  "Development Status :: 5 - Production/Stable",
+  "Environment :: Console",
+  "Intended Audience :: Developers",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
+  "Topic :: Software Development :: Libraries :: Python Modules",
+  "Typing :: Typed",
 ]
 
 [project.urls]
@@ -36,12 +43,7 @@ requires = ["uv_build>=0.13.9,<0.14.0"]
 build-backend = "uv_build"
 
 [dependency-groups]
-dev = [
-    "basedpyright>=1.40.2",
-    "mypy>=2.4.1",
-    "pytest>=9.2.0",
-    "ruff>=0.17.6",
-]
+dev = ["basedpyright>=1.40.2", "mypy>=2.4.1", "pytest>=9.2.0", "ruff>=0.17.6"]
 
 [tool.uv]
 # CI installs this uv too (setup-uv reads it), so the build backend always matches

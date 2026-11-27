@@ -6,16 +6,18 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-11-27
+
 ### Added
 
-- `parse_args(..., version="1.2.0")` adds a `--version` option that prints the program name
-  and version; `version_keys=` adds `-V`
+- `parse_args(..., version="1.2.0")` adds a `--version` option that prints the program name and version; `version_keys=`
+  adds `-V`
 - Required options: `opt(required=True)`
 - Options without a default: `name: str | None = opt()` is `None` unless given
 - `group=` on `opt()` and `flag()` lists them under their own heading in help
 - Short-only options and flags: `opt(1, short="-O", long=False)`
-- Commands: `command: Build | Test = cmd()`, including nested commands; optional with
-  `| None`, and renamed or aliased with `@command("ls", aliases=("l",))`
+- Commands: `command: Build | Test = cmd()`, including nested commands; optional with `| None`, and renamed or aliased
+  with `@command("ls", aliases=("l",))`
 
 ### Changed
 
@@ -24,8 +26,7 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
-- Fields typed with a `type X = ...` alias (e.g. `type Mode = Literal[...]`) were rejected as
-  unsupported
+- Fields typed with a `type X = ...` alias (e.g. `type Mode = Literal[...]`) were rejected as unsupported
 
 ## [1.0.0] - 2026-11-23
 
@@ -38,5 +39,5 @@ Initial release.
 - Colored output on terminals, respecting `NO_COLOR`
 - Python 3.12+, no dependencies
 
-[Unreleased]: https://github.com/darragh0/bicker/compare/v1.0.0...HEAD
-[1.0.0]: https://github.com/darragh0/bicker/releases/tag/v1.0.0
+[Unreleased]: https://github.com/darragh0/bicker/compare/v2.0.0...HEAD
+[2.0.0]: https://github.com/darragh0/bicker/compare/v1.0.0...v2.0.0
