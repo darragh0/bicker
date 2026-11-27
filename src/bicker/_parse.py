@@ -3,18 +3,18 @@ from __future__ import annotations
 import sys
 from copy import copy
 from dataclasses import MISSING
-from getopt import GetoptError, gnu_getopt
+from getopt import GetoptError, getopt, gnu_getopt
 from pathlib import Path
-from typing import TYPE_CHECKING, final
+from typing import TYPE_CHECKING, cast, final
 
 from bicker._help import HelpConfig, HelpRenderer
-from bicker._spec import LITERAL_TYPES, collect_fields
+from bicker._spec import LITERAL_TYPES, collect_spec
 from bicker._style import Style, Styles, style
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
-    from bicker._spec import Field, HelpKey, VersionKey
+    from bicker._spec import Field, HelpKey, Spec, VersionKey
 
 
 def parse_args[T](
@@ -83,7 +83,7 @@ def parse_args[T](
     version_keys = version_keys if version else ()
     reserved: dict[str, str] = dict.fromkeys(help_keys, "help_keys")
     reserved |= dict.fromkeys(version_keys, "version_keys")
-    fields = collect_fields(spec, reserved)
+    root = collect_spec(spec, reserved)
     cfg = HelpConfig(
         prog=prog or Path(sys.argv[0]).name,
         help_keys=help_keys,
@@ -96,51 +96,80 @@ def parse_args[T](
         use_shorthand_usage=use_shorthand_usage,
     )
 
-    pos_fields = [field for field in fields if field.is_pos]
-    option_fields = [field for field in fields if not field.is_pos]
     argv = sys.argv[1:] if argv is None else argv
+    path, argv = _find_commands(root, argv)
 
     # Help wins over any other error; after "--" everything is a positional
     options_part = argv[: argv.index("--")] if "--" in argv else argv
     if any(key in options_part for key in help_keys):
-        print(HelpRenderer(fields, cfg, sys.stdout).help())
+        print(HelpRenderer(path, cfg, sys.stdout).help())
         sys.exit(0)
     if version and any(key in options_part for key in version_keys):
         print(style(cfg.prog, Styles.PROG, sys.stdout), style(version, Styles.VERSION, sys.stdout))
         sys.exit(0)
 
     try:
-        option_values, raw_positionals = _parse_options(option_fields, argv)
-        pos_values = _parse_positionals(pos_fields, raw_positionals)
+        all_options = [field for level in path for field in level.options]
+        values, raw_positionals = _parse_options(all_options, argv)
+        values |= _parse_positionals(path[-1], raw_positionals)
     except _ParseError as e:
         print(f"{style('error', Styles.ERROR_PREFIX)} {e}", file=sys.stderr)
         if usage_on_error:
-            print("\n" + HelpRenderer(fields, cfg, sys.stderr).usage(), file=sys.stderr)
+            print("\n" + HelpRenderer(path, cfg, sys.stderr).usage(), file=sys.stderr)
         sys.exit(1)
 
-    # Copied so a mutable default (e.g. a list) isn't shared between parses;
-    # a list positional without a default (allowed when its min is 0) starts empty
-    values: dict[str, object] = {
-        field.name: [] if field.is_list and field.default is MISSING else copy(field.default)
-        for field in fields
-    }
-    values |= option_values
-    values |= pos_values
-
-    args = spec()
-    for name, value in values.items():
-        setattr(args, name, value)
-    return args
+    return cast("T", _instantiate(path, values))
 
 
-def _parse_options(
-    option_fields: Sequence[Field],
-    argv: Sequence[str],
-) -> tuple[dict[str, object], list[str]]:
+def _find_commands(root: Spec, argv: Sequence[str]) -> tuple[list[Spec], list[str]]:
+    """Find the given commands: the specs from `root` down, and `argv` without command names.
 
-    fields_by_key = {key: field for field in option_fields for key in field.keys}
+    Stops early on anything unexpected (e.g. an unknown option), which the full parse reports.
+    """
+    path = [root]
+    rest = list(argv)
+    start = 0  # Where the current command's arguments begin
 
-    # getopt's spec format: short "c:" / long "count=" mean the option takes a value
+    while path[-1].commands:
+        # Unlike gnu_getopt, getopt stops at the first positional: here, the command name
+        fields_by_key = {key: f for spec in path for f in spec.options for key in f.keys}
+        try:
+            _, after = getopt(rest[start:], *_getopt_spec(fields_by_key))
+        except GetoptError:
+            break
+        if not after or (command := path[-1].commands.get(after[0])) is None:
+            break
+
+        start = len(rest) - len(after)
+        del rest[start]
+        path.append(command)
+
+    return path, rest
+
+
+def _instantiate(path: Sequence[Spec], values: Mapping[Field, object]) -> object:
+    """Build each command's instance, innermost first, and return the outermost."""
+    command: object = None
+    for spec in reversed(path):
+        instance = spec.cls()
+        for field in (*spec.options, *spec.positionals):
+            setattr(instance, field.name, values.get(field, _default(field)))
+        if spec.command_attr:
+            setattr(instance, spec.command_attr, command)
+        command = instance
+    return command
+
+
+def _default(field: Field) -> object:
+    """Copy the default, so a mutable one (e.g. a list) isn't shared between parses.
+
+    A list without a default (a positional or required option allowed none) starts empty.
+    """
+    return [] if field.is_list and field.default is MISSING else copy(field.default)
+
+
+def _getopt_spec(fields_by_key: Mapping[str, Field]) -> tuple[str, list[str]]:
+    """Format the keys for getopt: short `"c:"` and long `"count="` take a value."""
     shorts = "".join(
         k[1] + ("" if f.is_flag else ":")
         for k, f in fields_by_key.items()
@@ -149,29 +178,37 @@ def _parse_options(
     longs = [
         k[2:] + ("" if f.is_flag else "=") for k, f in fields_by_key.items() if k.startswith("--")
     ]
+    return shorts, longs
+
+
+def _parse_options(
+    option_fields: Sequence[Field],
+    argv: Sequence[str],
+) -> tuple[dict[Field, object], list[str]]:
+
+    fields_by_key = {key: field for field in option_fields for key in field.keys}
 
     try:
-        option_pairs, raw_positionals = gnu_getopt(argv, shorts, longs)
+        option_pairs, raw_positionals = gnu_getopt(argv, *_getopt_spec(fields_by_key))
     except GetoptError as e:
         raise _ParseError(_getopt_error_message(e, fields_by_key)) from None
 
-    option_values: dict[str, object] = {}
-    repeated: dict[str, list[object]] = {}
+    option_values: dict[Field, object] = {}
+    repeated: dict[Field, list[object]] = {}
     # raw in this context: str version of object (e.g., "3" = raw version of 3)
     for key, raw in option_pairs:
         field = fields_by_key[key]
         value = True if field.is_flag else _convert(key, field, raw)
         if field.is_list:
-            repeated.setdefault(field.name, []).append(value)
+            repeated.setdefault(field, []).append(value)
         else:
-            option_values[field.name] = value
+            option_values[field] = value
 
-    for field in option_fields:
-        if field.name in repeated:
-            _check_count(field.long_key, field, len(repeated[field.name]))
+    for field, values in repeated.items():
+        _check_count(field.long_key, field, len(values))
 
     given = option_values | repeated
-    if missing := [f.long_key for f in option_fields if f.is_required and f.name not in given]:
+    if missing := [f.long_key for f in option_fields if f.is_required and f not in given]:
         noun = "option" if len(missing) == 1 else "options"
         msg = f"missing required {noun}: {', '.join(style(key, Styles.OPT) for key in missing)}"
         raise _ParseError(msg)
@@ -228,12 +265,21 @@ def _convert_choice(label: str, field: Field, raw: str) -> object:
     return choices_by_raw[raw]
 
 
-def _parse_positionals(
-    pos_fields: Sequence[Field],
-    raw_positionals: Sequence[str],
-) -> dict[str, object]:
+def _parse_positionals(spec: Spec, raw_positionals: Sequence[str]) -> dict[Field, object]:
+    """Convert the positionals, or check the command if `spec` has one (and so no positionals).
 
-    values: dict[str, object] = {}
+    A known command was already taken out of `raw_positionals` by `_find_commands`.
+    """
+    if spec.commands:
+        names = ", ".join(style(name, Styles.COMMAND) for name in spec.commands)
+        if not raw_positionals:
+            msg = f"missing command (one of: {names})"
+            raise _ParseError(msg)
+        msg = f"unknown command {style(raw_positionals[0], Styles.STR_VALUE)} (one of: {names})"
+        raise _ParseError(msg)
+
+    pos_fields = spec.positionals
+    values: dict[Field, object] = {}
     rest = list(raw_positionals)
 
     # Each positional takes its values in order: 1 for a single value, N for nargs=N,
@@ -247,13 +293,13 @@ def _parse_positionals(
             break
 
         if not field.is_list:
-            values[field.name] = _convert(field.name, field, rest.pop(0))
+            values[field] = _convert(field.name, field, rest.pop(0))
             continue
 
         _, high = field.nargs_range
         taken, rest = (rest, []) if high is None else (rest[:high], rest[high:])
         _check_count(field.name, field, len(taken))
-        values[field.name] = [_convert(field.name, field, raw) for raw in taken]
+        values[field] = [_convert(field.name, field, raw) for raw in taken]
 
     if rest:
         noun = "positional" if len(rest) == 1 else "positionals"

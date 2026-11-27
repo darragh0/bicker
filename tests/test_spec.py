@@ -62,7 +62,7 @@ class InvalidNargs:
 @pytest.mark.parametrize(
     ("spec", "message"),
     [
-        (NotDeclared, "must be declared with pos(), opt() or flag()"),
+        (NotDeclared, "must be declared with pos(), opt(), flag() or cmd()"),
         (Unsupported, "has unsupported type"),
         (UnsupportedUnion, "has unsupported type"),
         (BadShort, "has invalid short 'x'"),

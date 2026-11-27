@@ -13,6 +13,7 @@ All notable changes to this project are documented here. The format follows
 - Required options: `opt(required=True)`
 - Options without a default: `name: str | None = opt()` is `None` unless given
 - `group=` on `opt()` and `flag()` lists them under their own heading in help
+- Commands: `command: Build | Test = cmd()`, including nested commands
 
 ### Changed
 

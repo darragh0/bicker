@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 from collections import Counter
 from dataclasses import MISSING, dataclass
+from inspect import cleandoc
 from types import GenericAlias, NoneType, UnionType
 from typing import (
     TYPE_CHECKING,
@@ -34,6 +35,10 @@ type Nargs = int | tuple[int, int | None]
 _SHORT_KEY: Final = re.compile(r"-[A-Za-z0-9]")
 _LONG_KEY: Final = re.compile(r"--[A-Za-z0-9][A-Za-z0-9-]*")
 
+# Where a class name gets a dash in its command name: `RunTests` -> `run-tests`, `HTTPGet` ->
+# `http-get`
+_WORD_BOUNDARY: Final = re.compile(r"(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])")
+
 # Supported value types; bool is supported separately, for flags only
 _SCALAR_TYPES: Final = (str, int, float)
 
@@ -41,7 +46,8 @@ _SCALAR_TYPES: Final = (str, int, float)
 LITERAL_TYPES: Final[Mapping[type, Style]] = {str: Styles.STR_VALUE, int: Styles.INT_VALUE}
 
 
-@dataclass(frozen=True, kw_only=True)
+# Compared by identity (eq=False), so fields can be dict keys even with a list default
+@dataclass(frozen=True, kw_only=True, eq=False)
 class _Declaration:
     """What `pos()`, `opt()` and `flag()` return; the type isn't known until `collect_fields`."""
 
@@ -58,7 +64,7 @@ class _Declaration:
 
 
 @final
-@dataclass(frozen=True, kw_only=True)
+@dataclass(frozen=True, kw_only=True, eq=False)
 class Field(_Declaration):
     name: str
     # The type values are parsed as, e.g. `int` (for `int | None`), `list[str]` or `Literal["a"]`
@@ -71,9 +77,7 @@ class Field(_Declaration):
 
     @property
     def keys(self) -> tuple[str, ...]:
-        """The option's keys, short first, e.g. `("-c", "--count")`; none for a positional."""
-        if self.is_pos:
-            return ()
+        """An option's keys, short first, e.g. `("-c", "--count")`."""
         return (self.short, self.long_key) if self.short else (self.long_key,)
 
     @property
@@ -135,6 +139,34 @@ class Field(_Declaration):
         if self.choices:
             return "{" + ",".join(map(str, self.choices)) + "}"
         return self.name.upper()
+
+
+@final
+@dataclass(frozen=True, kw_only=True, eq=False)
+class Spec:
+    """A class of declarations, as read by `collect_spec`: the program, or one of its commands."""
+
+    cls: type[object]
+    options: tuple[Field, ...]
+    positionals: tuple[Field, ...]
+    # The `cmd()` attribute's name, and its commands by name; `None` and empty without one
+    command_attr: str | None
+    commands: Mapping[str, Spec]
+
+    @property
+    def name(self) -> str:
+        """The command name: the class name in kebab-case, e.g. `RunTests` -> `run-tests`."""
+        return _WORD_BOUNDARY.sub("-", self.cls.__name__).lower()
+
+    @property
+    def description(self) -> str | None:
+        """The class docstring, without its indentation."""
+        return cleandoc(self.cls.__doc__) if self.cls.__doc__ else None
+
+
+@final
+class _CommandDeclaration:
+    """What `cmd()` returns; the commands are read from the field's annotation."""
 
 
 # T only in the return type is intentional: it's inferred from the field's annotation
@@ -265,39 +297,100 @@ def flag(
     return opt(default=False, short=short, long=long, description=description, group=group)
 
 
-def collect_fields(spec: type[object], reserved: Mapping[str, str]) -> list[Field]:
-    """Read `spec`'s declarations, checking none use a `reserved` key (mapped to its setting)."""
+def cmd[T]() -> T:  # type: ignore[type-var]  # pyright: ignore[reportInvalidTypeVarUse]
+    """Declare the command, annotated with one class per command, e.g. `command: Build | Test`.
 
+    Each class declares its command's arguments, like the class passed to `parse_args`, and
+    its docstring is the command's help text. A command's name is its class name in kebab-case,
+    e.g. `run-tests` for `RunTests`. Options declared next to `cmd()` can be given before or
+    after the command. A class with a command can't have positionals.
+
+    Returns:
+        A placeholder that `parse_args` replaces with an instance of the given command's class.
+    """
+    return cast("T", _CommandDeclaration())
+
+
+def collect_spec(
+    cls: type[object],
+    reserved: Mapping[str, str],
+    inherited: Sequence[Field] = (),
+) -> Spec:
+    """Read `cls`'s declarations, checking none use a `reserved` key (mapped to its setting).
+
+    `inherited` holds the options declared above a command, which its keys mustn't clash with.
+    """
     fields: list[Field] = []
-    hints: dict[str, object] = get_type_hints(spec)
+    command_attr: str | None = None
+    command_classes: tuple[type[object], ...] = ()
+    hints: dict[str, object] = get_type_hints(cls)
 
     for name, typ in hints.items():
-        decl = getattr(spec, name, None)
-        if not isinstance(decl, _Declaration):
-            msg = f"{name!r} must be declared with pos(), opt() or flag()"
+        decl = getattr(cls, name, None)
+        if isinstance(decl, _Declaration):
+            fields.append(_field(name, typ, decl))
+        elif not isinstance(decl, _CommandDeclaration):
+            msg = f"{name!r} must be declared with pos(), opt(), flag() or cmd()"
             raise TypeError(msg)
+        elif command_attr:
+            msg = f"{cls.__name__} has more than one cmd()"
+            raise TypeError(msg)
+        else:
+            command_attr, command_classes = name, _command_classes(name, typ)
 
-        field = Field(
-            name=name,
-            typ=_parsed_type(typ),
-            default=decl.default,
-            short=decl.short,
-            custom_long=decl.custom_long,
-            is_pos=decl.is_pos,
-            custom_metavar=decl.custom_metavar,
-            description=decl.description,
-            nargs=decl.nargs,
-            group=decl.group,
-        )
-        _check_type(field)
-        _check_nargs(field)
-        fields.append(field)
+    options = tuple(field for field in fields if not field.is_pos)
+    positionals = tuple(field for field in fields if field.is_pos)
+    _check_keys([*inherited, *options])
+    _check_reserved(options, reserved)
+    _check_positional_order(positionals)
+    if command_attr and positionals:
+        msg = f"{cls.__name__} has a cmd(), so it can't have positionals"
+        raise TypeError(msg)
 
-    _check_keys(fields)
-    _check_reserved(fields, reserved)
-    _check_positional_order(fields)
+    commands: dict[str, Spec] = {}
+    for command_cls in command_classes:
+        command = collect_spec(command_cls, reserved, [*inherited, *options])
+        if command.name in commands:
+            msg = f"command name {command.name!r} used more than once"
+            raise TypeError(msg)
+        commands[command.name] = command
 
-    return fields
+    return Spec(
+        cls=cls,
+        options=options,
+        positionals=positionals,
+        command_attr=command_attr,
+        commands=commands,
+    )
+
+
+def _field(name: str, typ: object, decl: _Declaration) -> Field:
+    field = Field(
+        name=name,
+        typ=_parsed_type(typ),
+        default=decl.default,
+        short=decl.short,
+        custom_long=decl.custom_long,
+        is_pos=decl.is_pos,
+        custom_metavar=decl.custom_metavar,
+        description=decl.description,
+        nargs=decl.nargs,
+        group=decl.group,
+    )
+    _check_type(field)
+    _check_nargs(field)
+    return field
+
+
+def _command_classes(name: str, typ: object) -> tuple[type[object], ...]:
+    """Get the classes in a `cmd()` annotation: one class, or a union of several."""
+    typ = _expand_aliases(typ)
+    members: tuple[object, ...] = get_args(typ) if get_origin(typ) is UnionType else (typ,)
+    classes = tuple(m for m in members if isinstance(m, type) and m is not NoneType)
+    if len(classes) != len(members):
+        msg = f"{name!r} must be annotated with a class or a union of classes"
+        raise TypeError(msg)
+    return classes
 
 
 def _parsed_type(typ: object) -> object:

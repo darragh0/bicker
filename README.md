@@ -90,6 +90,46 @@ A list positional must come last, unless `nargs` fixes its count.
 Mistakes in the class itself (e.g. an unsupported type or a key used twice) raise
 `TypeError` as soon as `parse_args` runs.
 
+## Commands
+
+Declare each command as a class, and the command field with `cmd()`:
+
+```python
+from bicker import cmd, flag, parse_args, pos
+
+
+class Build:
+    """Build the project."""
+
+    release: bool = flag(short="-r")
+
+
+class Test:
+    """Run the tests."""
+
+    pattern: str | None = pos(None)
+
+
+class Args:
+    verbose: bool = flag(short="-v")
+    command: Build | Test = cmd()
+
+
+args = parse_args(Args)
+match args.command:
+    case Build(release=release):
+        print("release build" if release else "debug build")
+    case Test(pattern=pattern):
+        print(f"testing {pattern or 'everything'}")
+```
+
+- A command's name is its class name in kebab-case (`RunTests` is `run-tests`)
+- Its docstring is its help text
+- Options outside the command (like `-v`) can go before or after it
+- Commands can have commands of their own
+- A class with a `cmd()` can't have positionals
+- Many commands read best as an alias: `type Command = Build | Test | Deploy`
+
 ## Parsing
 
 Command lines follow GNU conventions: options and positionals can be mixed, values can
@@ -102,7 +142,6 @@ See its docstring for all of them.
 
 ## Not supported (yet)
 
-- Subcommands
 - Other value types (e.g. `Path`, `Enum`)
 - Short-only options
 - Custom colors

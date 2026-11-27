@@ -7,7 +7,7 @@ from typing import override
 
 import pytest
 
-from bicker import flag, opt, parse_args, pos
+from bicker import cmd, flag, opt, parse_args, pos
 
 ANSI_CODE = re.compile(r"\x1b\[[0-9;]*m")
 
@@ -53,3 +53,24 @@ def test_errors_are_colored_on_a_terminal(monkeypatch: pytest.MonkeyPatch) -> No
         _ = parse_args(Args, ["a", "-w", "x"], prog="tool")
     assert ANSI_CODE.sub("", stderr.getvalue()).startswith('error: -w expects int, got "x"')
     assert ANSI_CODE.search(stderr.getvalue())
+
+
+class Build:
+    release: bool = flag(short="-r")
+
+
+class WithCommand:
+    verbose: bool = flag(short="-v")
+    command: Build = cmd()
+
+
+def test_examples_color_commands_and_their_options(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("NO_COLOR", raising=False)
+    stdout = Terminal()
+    monkeypatch.setattr(sys, "stdout", stdout)
+    with pytest.raises(SystemExit):
+        _ = parse_args(WithCommand, ["-h"], prog="tool", examples=["-v build -r x"])
+    example = stdout.getvalue().rstrip("\n").rpartition("\n")[2]
+    assert ANSI_CODE.sub("", example) == "  tool -v build -r x"
+    # Every word but the plain value "x" is colored
+    assert re.findall(r"\x1b\[(?!0m)[0-9;]+m([^\x1b]+)", example) == ["tool", "-v", "build", "-r"]

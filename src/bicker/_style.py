@@ -20,6 +20,7 @@ class Styles:
     OPTIONAL_POS: Final = Style("96", "[{}]")
     OPT: Final = Style("96")
     FLAG: Final = Style("96")
+    COMMAND: Final = Style("96")
     TYPE: Final = Style("94")
     STR_VALUE: Final = Style("32", '"{}"')
     INT_VALUE: Final = Style("34")

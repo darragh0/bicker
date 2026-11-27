@@ -8,7 +8,7 @@ from bicker._style import Style, Styles, style, visible_len
 if TYPE_CHECKING:
     from collections.abc import Collection, Iterable, Sequence
 
-    from bicker._spec import Field, HelpKey, VersionKey
+    from bicker._spec import Field, HelpKey, Spec, VersionKey
 
 _PAD: Final = "  "
 
@@ -35,21 +35,30 @@ class HelpConfig:
 
 @final
 class HelpRenderer:
-    """Build help and usage text, styled for `stream` (stdout for help, stderr for errors)."""
+    """Build help and usage text, styled for `stream` (stdout for help, stderr for errors).
 
-    def __init__(self, fields: Sequence[Field], cfg: HelpConfig, stream: TextIO) -> None:
+    `path` holds the specs from the program down to the command the help is for.
+    """
+
+    def __init__(self, path: Sequence[Spec], cfg: HelpConfig, stream: TextIO) -> None:
         self._cfg = cfg
         self._stream = stream
+        self._spec = path[-1]
+        self._is_command = len(path) > 1
+        self._prog = " ".join([cfg.prog, *(spec.name for spec in path[1:])])
 
         # Required positionals always precede optional ones, so these are in display order
-        self._positionals = [field for field in fields if field.is_pos]
-
-        # Fields are equivalent to options with no values
-        self._options = [field for field in fields if not field.is_pos]
+        self._positionals = self._spec.positionals
+        self._options = self._spec.options
+        self._global_options = [field for spec in path[:-1] for field in spec.options]
 
     def help(self) -> str:
         cfg = self._cfg
 
+        command_entries = [
+            (self._st(name, Styles.COMMAND), _summary(command.description))
+            for name, command in self._spec.commands.items()
+        ]
         pos_entries = [
             (self._pos_label(field, Styles.OPTIONAL_POS), field.description)
             for field in self._positionals
@@ -58,8 +67,7 @@ class HelpRenderer:
         # Ungrouped options first, then each group in the order it first appears
         groups: dict[str, list[_Entry]] = {"Options": []}
         for field in self._options:
-            entry = self._option_entry(field.keys, field.style, field.metavar)
-            groups.setdefault(field.group, []).append((entry, field.description))
+            groups.setdefault(field.group, []).append(self._field_entry(field))
 
         if cfg.help_keys:
             help_entry = self._option_entry(cfg.help_keys, Styles.FLAG, None)
@@ -68,7 +76,12 @@ class HelpRenderer:
             version_entry = self._option_entry(cfg.version_keys, Styles.FLAG, None)
             groups["Options"].append((version_entry, cfg.version_description))
 
-        entry_sections = [("Positionals", pos_entries), *groups.items()]
+        entry_sections = [
+            ("Commands", command_entries),
+            ("Positionals", pos_entries),
+            *groups.items(),
+            ("Global options", [self._field_entry(field) for field in self._global_options]),
+        ]
 
         # Descriptions start in one column across all sections
         width = max(
@@ -76,17 +89,22 @@ class HelpRenderer:
             default=0,
         )
 
+        # A command's help is described by its docstring; examples and epilog are the program's
+        description = self._spec.description if self._is_command else cfg.description
+        examples = () if self._is_command else cfg.examples
+        epilog = None if self._is_command else cfg.epilog
+
         sections = [self.usage()]
-        if cfg.description:
-            sections.append(cfg.description)
+        if description:
+            sections.append(description)
         for title, entries in entry_sections:
             if entries:
                 lines = [_described(entry, desc, width) for entry, desc in entries]
                 sections.append(self._section(title, lines))
-        if cfg.examples:
-            sections.append(self._section("Examples", map(self._example, cfg.examples)))
-        if cfg.epilog:
-            sections.append(cfg.epilog)
+        if examples:
+            sections.append(self._section("Examples", map(self._example, examples)))
+        if epilog:
+            sections.append(epilog)
 
         return "\n\n".join(sections)
 
@@ -95,7 +113,7 @@ class HelpRenderer:
         shown = self._options
         options: list[str] = []
         if self._options and self._cfg.use_shorthand_usage:
-            shown = [field for field in self._options if field.is_required]
+            shown = tuple(field for field in self._options if field.is_required)
             options.append(self._st("options", Styles.USAGE_OPT))
 
         # "..." after a list option: it can be repeated
@@ -104,7 +122,9 @@ class HelpRenderer:
         positionals = [
             self._pos_label(field, Styles.USAGE_OPTIONAL_POS) for field in self._positionals
         ]
-        heading = [self._st("Usage", Styles.HEADING), self._st(self._cfg.prog, Styles.PROG)]
+        if self._spec.command_attr:
+            positionals.append(self._st(self._spec.command_attr, Styles.COMMAND))
+        heading = [self._st("Usage", Styles.HEADING), self._st(self._prog, Styles.PROG)]
 
         return " ".join([*heading, *options, *positionals])
 
@@ -129,6 +149,9 @@ class HelpRenderer:
         text = self._st(field.keys[0], field.style) + self._metavar(field.metavar)
         return text if field.is_required else self._st(text, Styles.USAGE_OPT)
 
+    def _field_entry(self, field: Field) -> _Entry:
+        return self._option_entry(field.keys, field.style, field.metavar), field.description
+
     def _option_entry(self, keys: Collection[str], style_: Style, metavar: str | None) -> str:
         """`-c, --count COUNT`, `    --color {a,b}` or `-h`, with long keys in one column."""
         ordered = sorted(keys, key=len)  # Short first
@@ -138,14 +161,23 @@ class HelpRenderer:
         return indent + styled_keys + self._metavar(metavar)
 
     def _example(self, example: str) -> str:
-        """Prefix `prog` and style known keys (e.g. `-w`) as in the options list."""
-        styles_by_key = {key: field.style for field in self._options for key in field.keys}
-        words = [
-            self._st(word, styles_by_key[word]) if word in styles_by_key else word
-            for word in example.split()
-        ]
-        prog = self._st(self._cfg.prog, Styles.PROG)
-        return " ".join([prog, *words])
+        """Prefix `prog`, and style commands and known keys (e.g. `-w`) as in the help lists."""
+        spec = self._spec
+        styles_by_key = _styles_by_key(self._options)
+        words = [self._st(self._prog, Styles.PROG)]
+
+        for word in example.split():
+            # Past a command's name, its own options are known too
+            if command := spec.commands.get(word):
+                spec = command
+                styles_by_key |= _styles_by_key(command.options)
+                words.append(self._st(word, Styles.COMMAND))
+            elif word in styles_by_key:
+                words.append(self._st(word, styles_by_key[word]))
+            else:
+                words.append(word)
+
+        return " ".join(words)
 
     def _metavar(self, metavar: str | None) -> str:
         """` COUNT`, with its leading space, or `""` if there's no metavar."""
@@ -161,3 +193,12 @@ def _described(entry: str, description: str | None, width: int) -> str:
     if not description:
         return entry
     return entry + " " * (width - visible_len(entry) + 2) + description
+
+
+def _summary(description: str | None) -> str | None:
+    """Get the first line of a command's description, without its period, for the commands list."""
+    return description.partition("\n")[0].removesuffix(".") if description else None
+
+
+def _styles_by_key(options: Iterable[Field]) -> dict[str, Style]:
+    return {key: field.style for field in options for key in field.keys}
