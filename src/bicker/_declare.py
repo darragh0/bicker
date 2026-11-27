@@ -31,6 +31,8 @@ class Declaration:
     each: Callable[[str], object] | None = None
     # The help heading an option is listed under
     group: str = "Options"
+    # Options with the same tag can't be given together
+    exclusive: str | None = None
 
 
 class _PosOptions(TypedDict, total=False):
@@ -45,6 +47,7 @@ class _OptOptions(TypedDict, total=False):
     metavar: str | None
     nargs: Nargs | None
     group: str
+    exclusive: str | None
 
 
 @final
@@ -151,6 +154,7 @@ def opt(
     metavar: str | None = None,
     nargs: Nargs | None = None,
     group: str = "Options",
+    exclusive: str | None = None,
     parse: Callable[[str], object] | None = None,
     each: Callable[[str], object] | None = None,
 ) -> object:
@@ -172,6 +176,7 @@ def opt(
         nargs: How many times a `list[T]` option can be given: exactly `n`, or `(min, max)`
             with `None` for no max. Defaults to any number, or at least 1 when `required`.
         group: The help heading to list this option under.
+        exclusive: A tag shared by options that can't be given together, e.g. `"format"`.
         parse: Turns the value's text into the field's type, for a type bicker doesn't support
             itself, e.g. `date.fromisoformat`. It should raise `ValueError` for an invalid value.
         each: Like `parse`, but for a `list[T]` field: turns each item's text into a `T`.
@@ -189,6 +194,7 @@ def opt(
         parse=parse,
         each=each,
         group=group,
+        exclusive=exclusive,
     )
 
 
@@ -199,6 +205,7 @@ def flag(
     long: str | Literal[False] | None = None,
     description: str | None = None,
     group: str = "Options",
+    exclusive: str | None = None,
 ) -> bool:
     """Declare a flag: a `bool` option without a value, which sets it to `True`.
 
@@ -210,6 +217,7 @@ def flag(
             `dry_run`. Pass `False` for a short-only flag.
         description: The help text for this flag.
         group: The help heading to list this flag under.
+        exclusive: A tag shared by options that can't be given together, e.g. `"format"`.
 
     Returns:
         A placeholder that `parse_args` replaces with the parsed value.
@@ -220,6 +228,7 @@ def flag(
         long=long,
         description=description,
         group=group,
+        exclusive=exclusive,
     )
 
 

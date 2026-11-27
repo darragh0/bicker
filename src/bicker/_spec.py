@@ -210,6 +210,7 @@ def collect_spec(
     positionals = tuple(field for field in fields if field.decl.is_pos)
     _check_keys(options)
     _check_inherited(options, inherited)
+    _check_exclusive(options)
     _check_reserved(options, reserved)
     _check_positional_order(positionals)
     if command_attr and positionals:
@@ -386,6 +387,25 @@ def _check_inherited(options: Sequence[Field], inherited: Sequence[Field]) -> No
     for field in options:
         if clashes := [key for key in field.all_keys if key in taken]:
             msg = f"{field.name!r} uses {clashes[0]}, which a global option already uses"
+            raise TypeError(msg)
+
+
+def exclusive_groups(options: Sequence[Field]) -> dict[str, list[Field]]:
+    """Group the options that can't be given together, by their `exclusive=` tag."""
+    groups: dict[str, list[Field]] = {}
+    for field in options:
+        if field.decl.exclusive is not None:
+            groups.setdefault(field.decl.exclusive, []).append(field)
+    return groups
+
+
+def _check_exclusive(options: Sequence[Field]) -> None:
+    for tag, members in exclusive_groups(options).items():
+        if len(members) == 1:
+            msg = f"{members[0].name!r} is the only option with exclusive={tag!r}"
+            raise TypeError(msg)
+        if required := next((field for field in members if field.is_required), None):
+            msg = f"{required.name!r} is required, so it can't be exclusive with other options"
             raise TypeError(msg)
 
 

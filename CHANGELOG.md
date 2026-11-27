@@ -12,6 +12,7 @@ All notable changes to this project are documented here. The format follows
 - Converters for any other type on `pos()` and `opt()`: `parse=` for one value, `each=` for a list's
   items, e.g. `parse=date.fromisoformat`
 - Negatable flags: `flag(default=True)` also gets a `--no-` key, e.g. `--no-color`
+- Mutually exclusive options: options sharing an `exclusive=` tag can't be given together
 
 ## [2.1.0] - 2026-11-27
 

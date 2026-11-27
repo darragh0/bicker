@@ -4,7 +4,7 @@ import shutil
 from dataclasses import MISSING, dataclass
 from typing import TYPE_CHECKING, Final, Literal, TextIO, cast, final
 
-from bicker._spec import as_text
+from bicker._spec import as_text, exclusive_groups
 from bicker._style import Style, Styles, style, value_style, visible_len
 
 if TYPE_CHECKING:
@@ -132,7 +132,16 @@ class HelpRenderer:
             shown = tuple(field for field in self._options if field.is_required)
             options.append(self._st("options", Styles.USAGE_OPT))
 
-        options += [self._usage_option(field) for field in shown]
+        # Options that can't be given together are shown as one: `[--json | --yaml]`
+        groups = exclusive_groups(self._options)
+        for field in shown:
+            if (tag := field.decl.exclusive) is None:
+                options.append(self._usage_option(field))
+            elif field is groups[tag][0]:
+                choices = " | ".join(
+                    self._usage_key(member) + self._ellipsis(member) for member in groups[tag]
+                )
+                options.append(self._st(choices, Styles.USAGE_OPT))
 
         positionals = [
             self._pos_label(field, Styles.USAGE_OPTIONAL_POS) for field in self._positionals

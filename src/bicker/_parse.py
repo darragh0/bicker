@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, cast, final
 
 from bicker._help import HelpConfig, HelpRenderer
-from bicker._spec import collect_spec
+from bicker._spec import collect_spec, exclusive_groups
 from bicker._style import Style, Styles, style, value_style
 
 if TYPE_CHECKING:
@@ -116,6 +116,8 @@ def parse_args[T](
     try:
         all_options = [field for level in path for field in level.options]
         values, raw_positionals = _parse_options(all_options, argv)
+        for level in path:
+            _check_exclusive(level.options, values)
         values |= _parse_positionals(path[-1], raw_positionals)
     except _ParseError as e:
         print(f"{style('error', Styles.ERROR_PREFIX)} {e}", file=sys.stderr)
@@ -317,6 +319,14 @@ def _parse_positionals(spec: Spec, raw_positionals: Sequence[str]) -> dict[Field
         raise _ParseError(msg)
 
     return values
+
+
+def _check_exclusive(options: Sequence[Field], values: Mapping[Field, object]) -> None:
+    for members in exclusive_groups(options).values():
+        if len(given := [field for field in members if field in values]) > 1:
+            keys = ", ".join(style(field.label, field.style) for field in given)
+            msg = f"{keys} can't be used together"
+            raise _ParseError(msg)
 
 
 def _check_count(label: str, field: Field, count: int) -> None:

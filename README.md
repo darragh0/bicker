@@ -77,6 +77,7 @@ Each also takes:
   one
 - `metavar=` (options): its value's placeholder in help
 - `group=` (options and flags): the help heading it's listed under, `Options` by default
+- `exclusive=` (options and flags): a tag shared by options that can't be given together, e.g. `"format"`
 
 **Types:**
 
