@@ -205,10 +205,10 @@ def _parse_options(
             option_values[field] = value
 
     for field, values in repeated.items():
-        _check_count(field.long_key, field, len(values))
+        _check_count(field.label, field, len(values))
 
     given = option_values | repeated
-    if missing := [f.long_key for f in option_fields if f.is_required and f not in given]:
+    if missing := [f.label for f in option_fields if f.is_required and f not in given]:
         noun = "option" if len(missing) == 1 else "options"
         msg = f"missing required {noun}: {', '.join(style(key, Styles.OPT) for key in missing)}"
         raise _ParseError(msg)

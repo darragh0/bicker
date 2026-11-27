@@ -56,7 +56,8 @@ class _Declaration:
     # MISSING for a required argument
     default: object
     short: str | None = None
-    custom_long: str | None = None
+    # False for a short-only option
+    custom_long: str | Literal[False] | None = None
     is_pos: bool = False
     custom_metavar: str | None = None
     description: str | None = None
@@ -73,14 +74,21 @@ class Field(_Declaration):
     typ: object
 
     @property
-    def long_key(self) -> str:
+    def long_key(self) -> str | None:
         """The custom long key if set, else derived from the name: `dry_run` -> `--dry-run`."""
+        if self.custom_long is False:
+            return None
         return self.custom_long or f"--{self.name.replace('_', '-')}"
 
     @property
     def keys(self) -> tuple[str, ...]:
         """An option's keys, short first, e.g. `("-c", "--count")`."""
-        return (self.short, self.long_key) if self.short else (self.long_key,)
+        return tuple(key for key in (self.short, self.long_key) if key)
+
+    @property
+    def label(self) -> str:
+        """The key used in messages: the long key, or the short one for a short-only option."""
+        return self.keys[-1]
 
     @property
     def style(self) -> Style:
@@ -222,7 +230,7 @@ def opt[T](
     *,
     required: Literal[True],
     short: str | None = None,
-    long: str | None = None,
+    long: str | Literal[False] | None = None,
     description: str | None = None,
     metavar: str | None = None,
     nargs: Nargs | None = None,
@@ -233,7 +241,7 @@ def opt[T](
     default: T,
     *,
     short: str | None = None,
-    long: str | None = None,
+    long: str | Literal[False] | None = None,
     description: str | None = None,
     metavar: str | None = None,
     nargs: Nargs | None = None,
@@ -243,7 +251,7 @@ def opt[T](
 def opt[T](
     *,
     short: str | None = None,
-    long: str | None = None,
+    long: str | Literal[False] | None = None,
     description: str | None = None,
     metavar: str | None = None,
     nargs: Nargs | None = None,
@@ -254,7 +262,7 @@ def opt(
     *,
     required: bool = False,
     short: str | None = None,
-    long: str | None = None,
+    long: str | Literal[False] | None = None,
     description: str | None = None,
     metavar: str | None = None,
     nargs: Nargs | None = None,
@@ -271,7 +279,7 @@ def opt(
         required: Whether the option must be given. A required option has no default.
         short: A short key like `-c`: a dash plus one letter or digit.
         long: A long key like `--count`. Defaults to the field name, e.g. `--dry-run` for
-            `dry_run`.
+            `dry_run`. Pass `False` for a short-only option.
         description: The help text for this option.
         metavar: The value's placeholder in help. Defaults to `{a,b}` for a `Literal`, and
             the field name in uppercase otherwise.
@@ -296,7 +304,7 @@ def opt(
 def flag(
     *,
     short: str | None = None,
-    long: str | None = None,
+    long: str | Literal[False] | None = None,
     description: str | None = None,
     group: str = "Options",
 ) -> bool:
@@ -305,7 +313,7 @@ def flag(
     Args:
         short: A short key like `-v`: a dash plus one letter or digit.
         long: A long key like `--verbose`. Defaults to the field name, e.g. `--dry-run` for
-            `dry_run`.
+            `dry_run`. Pass `False` for a short-only flag.
         description: The help text for this flag.
         group: The help heading to list this flag under.
 
@@ -526,11 +534,14 @@ def _check_keys(fields: Sequence[Field]) -> None:
                 "(expected '-' plus one letter or digit)"
             )
             raise TypeError(msg)
-        if field.custom_long is not None and not _LONG_KEY.fullmatch(field.custom_long):
+        if isinstance(field.custom_long, str) and not _LONG_KEY.fullmatch(field.custom_long):
             msg = (
                 f"{field.name!r} has invalid long {field.custom_long!r} "
                 "(expected '--' plus letters, digits or '-')"
             )
+            raise TypeError(msg)
+        if not field.keys:
+            msg = f"{field.name!r} has long=False, so it needs a short key"
             raise TypeError(msg)
 
     counts = Counter(key for field in fields for key in field.keys)

@@ -70,7 +70,8 @@ Output is colored in a terminal, unless `NO_COLOR` is set.
 Each also takes:
 
 - `description=`: its help text
-- `long=` (options and flags): its long key, which defaults to the field name with `_` as `-`
+- `long=` (options and flags): its long key -- defaults to the field name with `_` as `-`; `long=False` for a short-only
+  one
 - `metavar=` (options): its value's placeholder in help
 - `group=` (options and flags): the help heading it's listed under, `Options` by default
 
@@ -145,7 +146,6 @@ See its docstring for all of them.
 ## Not supported (yet)
 
 - Other value types (e.g. `Path`, `Enum`)
-- Short-only options
 - Custom colors
 
 Feature requests are welcome: [open an issue](https://github.com/darragh0/bicker/issues).

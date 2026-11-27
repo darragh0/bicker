@@ -13,6 +13,7 @@ All notable changes to this project are documented here. The format follows
 - Required options: `opt(required=True)`
 - Options without a default: `name: str | None = opt()` is `None` unless given
 - `group=` on `opt()` and `flag()` lists them under their own heading in help
+- Short-only options and flags: `opt(1, short="-O", long=False)`
 - Commands: `command: Build | Test = cmd()`, including nested commands; optional with
   `| None`, and renamed or aliased with `@command("ls", aliases=("l",))`
 
