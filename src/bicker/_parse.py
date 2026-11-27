@@ -32,6 +32,7 @@ def parse_args[T](
     examples: list[str] | tuple[str, ...] = (),
     usage_on_error: bool = True,
     use_shorthand_usage: bool = False,
+    show_defaults: bool = True,
 ) -> T:
     """Parse command-line arguments into an instance of `spec`.
 
@@ -57,6 +58,8 @@ def parse_args[T](
         usage_on_error: Whether to print the usage line after an error.
         use_shorthand_usage: Whether the usage line shows `[options]` instead of expanding each
             option.
+        show_defaults: Whether help shows each default, e.g. `[default: 800]`. Defaults that say
+            nothing (`None`, `False` or empty) are never shown.
 
     Returns:
         An instance of `spec` with each declared attribute set to its parsed or default value.
@@ -94,6 +97,7 @@ def parse_args[T](
         epilog=epilog,
         examples=examples,
         use_shorthand_usage=use_shorthand_usage,
+        show_defaults=show_defaults,
     )
 
     argv = sys.argv[1:] if argv is None else argv

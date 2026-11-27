@@ -6,6 +6,10 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Help shows defaults, e.g. `[default: 800]`; turn it off with `parse_args(..., show_defaults=False)`
+
 ## [2.0.0] - 2026-11-27
 
 ### Added

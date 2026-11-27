@@ -27,6 +27,7 @@ class Styles:
     METAVAR: Final = Style("2;96")
     ELLIPSIS: Final = Style("96", "{}")
     VERSION: Final = Style("92")
+    DEFAULT: Final = Style("2")
     # --------------------------------------------
     ERROR_PREFIX: Final = Style("91", "{}:")
     HEADING: Final = Style("92;1", "{}:")

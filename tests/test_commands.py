@@ -117,7 +117,7 @@ def test_help_lists_commands(capsys: pytest.CaptureFixture[str]) -> None:
         "\n"
         "Options:\n"
         "  -v, --verbose    Print more\n"
-        "  -j, --jobs JOBS\n"
+        "  -j, --jobs JOBS  [default: 1]\n"
         "  -h, --help       Show this message and exit\n"
     )
 
@@ -136,7 +136,7 @@ def test_command_help_shows_its_docstring_and_global_options(
         "\n"
         "Global options:\n"
         "  -v, --verbose    Print more\n"
-        "  -j, --jobs JOBS\n"
+        "  -j, --jobs JOBS  [default: 1]\n"
     )
 
 

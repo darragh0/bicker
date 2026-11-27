@@ -41,12 +41,12 @@ Usage: resize.py -w PX [-H PX] [-f {png,jpg}] [-v] src [dst]
 
 Positionals:
   src                  Image to resize
-  [dst]                Where to save it
+  [dst]                Where to save it [default: "out.png"]
 
 Options:
   -w, --width PX       Target width
   -H, --height PX      Target height
-  -f, --fmt {png,jpg}  Output format
+  -f, --fmt {png,jpg}  Output format [default: "png"]
   -v, --verbose        Print progress
   -h, --help           Show this message and exit
 

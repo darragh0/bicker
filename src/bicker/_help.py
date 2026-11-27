@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import TYPE_CHECKING, Final, TextIO, final
+from dataclasses import MISSING, dataclass
+from typing import TYPE_CHECKING, Final, TextIO, cast, final
 
 from bicker._style import Style, Styles, style, visible_len
 
@@ -12,8 +12,9 @@ if TYPE_CHECKING:
 
 _PAD: Final = "  "
 
-# A help line before alignment: the styled keys or name, and the description
-type _Entry = tuple[str, str | None]
+# A help line before alignment: the styled keys or name, and the description's words (a
+# `[default: ...]` note counts as one)
+type _Entry = tuple[str, list[str]]
 
 
 @final
@@ -31,6 +32,7 @@ class HelpConfig:
     epilog: str | None
     examples: Sequence[str]
     use_shorthand_usage: bool
+    show_defaults: bool
 
 
 @final
@@ -56,11 +58,11 @@ class HelpRenderer:
         cfg = self._cfg
 
         command_entries = [
-            (self._command_entry(command), _summary(command.description))
+            (self._command_entry(command), _words(_summary(command.description)))
             for command in self._spec.commands.values()
         ]
         pos_entries = [
-            (self._pos_label(field, Styles.OPTIONAL_POS), field.description)
+            (self._pos_label(field, Styles.OPTIONAL_POS), self._field_words(field))
             for field in self._positionals
         ]
 
@@ -71,10 +73,10 @@ class HelpRenderer:
 
         if cfg.help_keys:
             help_entry = self._option_entry(cfg.help_keys, Styles.FLAG, None)
-            groups["Options"].append((help_entry, cfg.help_description))
+            groups["Options"].append((help_entry, _words(cfg.help_description)))
         if cfg.version_keys:
             version_entry = self._option_entry(cfg.version_keys, Styles.FLAG, None)
-            groups["Options"].append((version_entry, cfg.version_description))
+            groups["Options"].append((version_entry, _words(cfg.version_description)))
 
         entry_sections = [
             ("Commands", command_entries),
@@ -99,7 +101,7 @@ class HelpRenderer:
             sections.append(description)
         for title, entries in entry_sections:
             if entries:
-                lines = [_described(entry, desc, width) for entry, desc in entries]
+                lines = [_described(entry, words, width) for entry, words in entries]
                 sections.append(self._section(title, lines))
         if examples:
             sections.append(self._section("Examples", map(self._example, examples)))
@@ -158,7 +160,27 @@ class HelpRenderer:
         )
 
     def _field_entry(self, field: Field) -> _Entry:
-        return self._option_entry(field.keys, field.style, field.metavar), field.description
+        return self._option_entry(field.keys, field.style, field.metavar), self._field_words(field)
+
+    def _field_words(self, field: Field) -> list[str]:
+        """Split the description into words, then add `[default: ...]` if it's shown."""
+        note = self._default_note(field) if self._cfg.show_defaults else None
+        return [*_words(field.description), *([note] if note else [])]
+
+    def _default_note(self, field: Field) -> str | None:
+        """`[default: 800]`, or `None` for a default not worth showing: none, `False` or empty."""
+        default = field.default
+        if default is MISSING or default is None or field.is_flag:
+            return None
+
+        values = cast("list[object]", default) if field.is_list else [default]
+        if not values:
+            return None
+        shown = ", ".join(
+            self._st(str(value), Styles.STR_VALUE if isinstance(value, str) else Styles.INT_VALUE)
+            for value in values
+        )
+        return self._st(f"[default: {shown}]", Styles.DEFAULT)
 
     def _option_entry(self, keys: Collection[str], style_: Style, metavar: str | None) -> str:
         """`-c, --count COUNT`, `    --color {a,b}` or `-h`, with long keys in one column."""
@@ -196,11 +218,15 @@ class HelpRenderer:
         return self._st("...", Styles.ELLIPSIS) if field.is_list else ""
 
 
-def _described(entry: str, description: str | None, width: int) -> str:
-    """Append `description` after `entry`, padded so descriptions start at `width` + 2."""
-    if not description:
+def _described(entry: str, words: Sequence[str], width: int) -> str:
+    """Put the words after `entry`, padded so they start at `width` + 2."""
+    if not words:
         return entry
-    return entry + " " * (width - visible_len(entry) + 2) + description
+    return entry + " " * (width - visible_len(entry) + 2) + " ".join(words)
+
+
+def _words(text: str | None) -> list[str]:
+    return text.split() if text else []
 
 
 def _summary(description: str | None) -> str | None:

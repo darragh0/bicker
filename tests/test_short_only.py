@@ -37,7 +37,7 @@ def test_help_lists_the_short_key_only(capsys: pytest.CaptureFixture[str]) -> No
         "Usage: tool [-O LEVEL] -n NAME [-g]\n"
         "\n"
         "Options:\n"
-        "  -O LEVEL    Optimisation level\n"
+        "  -O LEVEL    Optimisation level [default: 1]\n"
         "  -n NAME\n"
         "  -g          Add debug info\n"
         "  -h, --help  Show this message and exit\n"

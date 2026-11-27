@@ -41,8 +41,8 @@ def test_help_lists_everything_aligned(capsys: pytest.CaptureFixture[str]) -> No
         "  [files...]\n"
         "\n"
         "Options:\n"
-        "  -w, --width PX       Target width\n"
-        "      --fmt {png,jpg}\n"
+        "  -w, --width PX       Target width [default: 800]\n"
+        '      --fmt {png,jpg}  [default: "png"]\n'
         "  -v, --verbose\n"
         "  -h, --help           Show this message and exit\n"
         "\n"
@@ -94,9 +94,44 @@ def test_groups_get_their_own_heading_in_order(capsys: pytest.CaptureFixture[str
         "  -h, --help             Show this message and exit\n"
         "\n"
         "Output:\n"
-        "  -w, --width WIDTH\n"
-        "      --fmt {png,jpg}\n"
+        "  -w, --width WIDTH      [default: 800]\n"
+        '      --fmt {png,jpg}    [default: "png"]\n'
         "\n"
         "Network:\n"
-        "      --retries RETRIES\n"
+        "      --retries RETRIES  [default: 3]\n"
     )
+
+
+class Defaults:
+    dst: str = pos("out.png")
+    scale: float = opt(1.5)
+    tags: list[str] = opt(["a", "b"])
+    none: str | None = opt()
+    empty: list[str] = opt([])
+    quiet: bool = flag()
+
+
+def defaults_help(capsys: pytest.CaptureFixture[str], *, show_defaults: bool = True) -> str:
+    with pytest.raises(SystemExit):
+        _ = parse_args(Defaults, ["-h"], prog="tool", show_defaults=show_defaults)
+    return capsys.readouterr().out
+
+
+def test_help_shows_defaults_worth_showing(capsys: pytest.CaptureFixture[str]) -> None:
+    expected = (
+        "Positionals:\n"
+        '  [dst]              [default: "out.png"]\n'
+        "\n"
+        "Options:\n"
+        "      --scale SCALE  [default: 1.5]\n"
+        '      --tags TAGS    [default: "a", "b"]\n'
+        "      --none NONE\n"
+        "      --empty EMPTY\n"
+        "      --quiet\n"
+        "  -h, --help         Show this message and exit\n"
+    )
+    assert defaults_help(capsys).endswith(expected)
+
+
+def test_show_defaults_can_be_turned_off(capsys: pytest.CaptureFixture[str]) -> None:
+    assert "default" not in defaults_help(capsys, show_defaults=False)
