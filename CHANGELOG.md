@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [2.1.0] - 2026-11-27
+
 ### Added
 
 - Help shows defaults, e.g. `[default: 800]`; turn it off with `parse_args(..., show_defaults=False)`
@@ -44,5 +46,6 @@ Initial release.
 - Colored output on terminals, respecting `NO_COLOR`
 - Python 3.12+, no dependencies
 
-[Unreleased]: https://github.com/darragh0/bicker/compare/v2.0.0...HEAD
+[Unreleased]: https://github.com/darragh0/bicker/compare/v2.1.0...HEAD
+[2.1.0]: https://github.com/darragh0/bicker/compare/v2.0.0...v2.1.0
 [2.0.0]: https://github.com/darragh0/bicker/compare/v1.0.0...v2.0.0
