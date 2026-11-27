@@ -1,6 +1,6 @@
 [project]
 name = "bicker"
-version = "2.1.0"
+version = "2.3.0"
 description = "Tiny, fully typed CLI argument parser: declare args as a class"
 readme = "README.md"
 authors = [
